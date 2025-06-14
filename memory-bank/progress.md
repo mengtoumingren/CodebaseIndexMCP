@@ -278,3 +278,43 @@
 
 * 🎯 文件索引更新机制已修复完成
 * 🔄 文件监控服务现在可以正确处理文件更新，不会产生重复索引
+[2025-06-15 07:53:00] - **增量重建索引功能实施完成**
+
+## 已完成任务
+
+* ✅ 数据模型更新：在 `IndexConfiguration.cs` 中添加 `FileIndexDetail` 类
+* ✅ 修改 `ExecuteIndexingTaskAsync` 方法：索引完成后自动填充 `FileIndexDetails`
+* ✅ 重写 `RebuildIndexAsync` 方法：实现增量重建逻辑，仅处理变更文件
+* ✅ 新增 `ExecuteIncrementalRebuildAsync` 方法：核心增量重建逻辑实现
+* ✅ 修改 `UpdateFileIndexAsync` 方法：同步更新 `FileIndexDetails`
+* ✅ 新增辅助方法：`UpdateFileIndexDetailsAsync` 和 `RemoveFileIndexDetailsAsync`
+* ✅ 项目编译成功，仅有非阻塞性警告
+
+## 核心改进功能
+
+* 🔄 **增量重建算法**：
+  - 处理已删除文件：从 Qdrant 和 `FileIndexDetails` 中清理
+  - 处理新增文件：索引并添加到 `FileIndexDetails`
+  - 处理修改文件：基于文件修改时间判断，重新索引
+  - 跳过未变文件：提高效率
+
+* 📊 **详细统计信息**：
+  - 删除文件数、新增文件数、修改文件数、未变文件数
+  - 详细的进度报告和日志记录
+
+* 🔧 **自动维护 FileIndexDetails**：
+  - 创建索引时自动填充文件详情
+  - 文件监控更新时同步更新记录
+  - 支持新增、修改、删除文件的完整生命周期管理
+
+## 技术实现亮点
+
+* 使用文件修改时间 (`File.GetLastWriteTimeUtc`) 判断文件变更
+* 基于相对路径的规范化比较确保一致性
+* 完整的错误处理和任务状态管理
+* 与现有的连接监控和任务持久化系统完全集成
+
+## 当前任务
+
+* 🎯 增量重建索引功能已完成实施
+* 🔄 准备进行功能测试

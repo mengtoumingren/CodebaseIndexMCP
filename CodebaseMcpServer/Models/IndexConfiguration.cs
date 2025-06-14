@@ -57,6 +57,27 @@ public class CodebaseMapping
     
     [JsonPropertyName("watcherConfig")]
     public WatcherConfig WatcherConfig { get; set; } = new();
+    
+    [JsonPropertyName("fileIndexDetails")]
+    public List<FileIndexDetail> FileIndexDetails { get; set; } = new();
+}
+
+/// <summary>
+/// 文件索引详情 - 用于增量重建索引
+/// </summary>
+public class FileIndexDetail
+{
+    [JsonPropertyName("filePath")]
+    public string FilePath { get; set; } = string.Empty; // 文件相对路径 (相对于 codebasePath)
+
+    [JsonPropertyName("normalizedFilePath")]
+    public string NormalizedFilePath { get; set; } = string.Empty; // 规范化的文件相对路径
+
+    [JsonPropertyName("lastIndexed")]
+    public DateTime LastIndexed { get; set; } // 文件上次成功索引的时间 (UTC)
+
+    [JsonPropertyName("fileHash")] // 可选，用于更精确地判断文件内容是否变化
+    public string? FileHash { get; set; }
 }
 
 /// <summary>

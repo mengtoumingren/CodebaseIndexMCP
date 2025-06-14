@@ -258,6 +258,35 @@ public class IndexingTaskManager
                 collectionName,
                 new List<string> { "*.cs" });
             
+            // 🔥 新功能：填充 FileIndexDetails
+            try
+            {
+                _logger.LogDebug("开始填充 FileIndexDetails 为代码库: {CodebasePath}", task.CodebasePath);
+                var currentTime = DateTime.UtcNow;
+                
+                foreach (var filePath in codeFiles)
+                {
+                    var relativePath = filePath.GetRelativePath(task.CodebasePath);
+                    var normalizedRelativePath = relativePath.NormalizePath();
+                    
+                    var fileDetail = new FileIndexDetail
+                    {
+                        FilePath = relativePath,
+                        NormalizedFilePath = normalizedRelativePath,
+                        LastIndexed = currentTime,
+                        FileHash = null // 暂不实现文件哈希
+                    };
+                    
+                    mapping.FileIndexDetails.Add(fileDetail);
+                }
+                
+                _logger.LogInformation("成功填充 {Count} 个文件的索引详情", mapping.FileIndexDetails.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "填充 FileIndexDetails 时发生错误，但不影响索引完成");
+            }
+            
             // 更新任务状态
             task.Status = IndexingStatus.Completed;
             task.EndTime = DateTime.UtcNow;
@@ -395,7 +424,7 @@ public class IndexingTaskManager
     }
 
     /// <summary>
-    /// 重建索引
+    /// 增量重建索引 - 仅处理变更的文件
     /// </summary>
     public async Task<IndexingResult> RebuildIndexAsync(string codebasePath)
     {
@@ -409,11 +438,271 @@ public class IndexingTaskManager
             };
         }
 
-        // 先删除现有映射
-        await _configManager.RemoveMapping(mapping.Id);
+        var normalizedPath = codebasePath.NormalizePath();
         
-        // 重新创建索引
-        return await StartIndexingAsync(codebasePath, mapping.FriendlyName);
+        // 检查是否已在执行
+        if (_runningTasks.ContainsKey(normalizedPath))
+        {
+            var existingTask = _runningTasks[normalizedPath];
+            return new IndexingResult
+            {
+                Success = false,
+                Message = "该代码库正在处理中，请等待完成",
+                TaskId = existingTask.Id
+            };
+        }
+
+        // 创建重建任务
+        var task = new IndexingTask
+        {
+            Id = PathExtensions.GenerateUniqueId(),
+            CodebasePath = codebasePath,
+            Status = IndexingStatus.Running,
+            StartTime = DateTime.UtcNow,
+            ProgressPercentage = 0
+        };
+        
+        _runningTasks.TryAdd(normalizedPath, task);
+        
+        // 保存任务到本地存储
+        await _persistenceService.SaveTaskAsync(task);
+        
+        // 异步执行增量重建
+        _ = Task.Run(async () => await ExecuteIncrementalRebuildAsync(task, mapping));
+        
+        _logger.LogInformation("增量重建任务已启动: {Path}, 任务ID: {TaskId}", codebasePath, task.Id);
+        
+        return new IndexingResult
+        {
+            Success = true,
+            Message = "增量重建任务已启动",
+            TaskId = task.Id
+        };
+    }
+
+    /// <summary>
+    /// 执行增量重建索引任务
+    /// </summary>
+    private async Task ExecuteIncrementalRebuildAsync(IndexingTask task, CodebaseMapping mapping)
+    {
+        var normalizedPath = task.CodebasePath.NormalizePath();
+        var deletedFiles = 0;
+        var newFiles = 0;
+        var modifiedFiles = 0;
+        var unchangedFiles = 0;
+        
+        try
+        {
+            _logger.LogInformation("开始执行增量重建: {Path}", task.CodebasePath);
+            task.CurrentFile = "正在分析文件变更...";
+            
+            // 更新任务状态到持久化存储
+            await _persistenceService.UpdateTaskAsync(task);
+            
+            // 检查Qdrant连接状态
+            if (!_connectionMonitor.IsConnected)
+            {
+                _logger.LogWarning("Qdrant连接不可用，增量重建任务 {TaskId} 等待连接恢复", task.Id);
+                task.CurrentFile = "等待数据库连接恢复...";
+                task.Status = IndexingStatus.Pending;
+                await _persistenceService.UpdateTaskAsync(task);
+                
+                var connectionRestored = await _connectionMonitor.WaitForConnectionAsync(task.Id);
+                if (!connectionRestored)
+                {
+                    throw new InvalidOperationException("等待Qdrant连接超时，增量重建任务被取消");
+                }
+                
+                _logger.LogInformation("Qdrant连接已恢复，继续执行增量重建任务 {TaskId}", task.Id);
+                task.Status = IndexingStatus.Running;
+                task.CurrentFile = "连接已恢复，继续分析...";
+                await _persistenceService.UpdateTaskAsync(task);
+            }
+            
+            // 获取当前物理文件列表
+            task.CurrentFile = "正在扫描当前文件...";
+            task.ProgressPercentage = 10;
+            await _persistenceService.UpdateTaskAsync(task);
+            
+            var currentFiles = Directory.GetFiles(task.CodebasePath, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !f.IsExcludedPath(new List<string> { "bin", "obj", ".git", "node_modules" }))
+                .ToList();
+            
+            var currentFileRelativePaths = currentFiles
+                .Select(f => f.GetRelativePath(task.CodebasePath).NormalizePath())
+                .ToHashSet();
+            
+            _logger.LogInformation("当前物理文件数: {Count}", currentFiles.Count);
+            
+            // 处理已删除文件
+            task.CurrentFile = "正在处理已删除文件...";
+            task.ProgressPercentage = 20;
+            await _persistenceService.UpdateTaskAsync(task);
+            
+            var filesToRemove = new List<FileIndexDetail>();
+            foreach (var fileDetail in mapping.FileIndexDetails)
+            {
+                if (!currentFileRelativePaths.Contains(fileDetail.NormalizedFilePath))
+                {
+                    // 文件已被删除
+                    _logger.LogDebug("文件已删除: {FilePath}", fileDetail.FilePath);
+                    
+                    // 从 Qdrant 中删除该文件的索引
+                    var absolutePath = Path.Combine(task.CodebasePath, fileDetail.FilePath);
+                    var deleteSuccess = await _searchService.DeleteFileIndexAsync(absolutePath, mapping.CollectionName);
+                    if (deleteSuccess)
+                    {
+                        deletedFiles++;
+                        filesToRemove.Add(fileDetail);
+                        _logger.LogInformation("成功删除文件索引: {FilePath}", fileDetail.FilePath);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("删除文件索引失败: {FilePath}", fileDetail.FilePath);
+                    }
+                }
+            }
+            
+            // 从 FileIndexDetails 中移除已删除的文件记录
+            foreach (var fileToRemove in filesToRemove)
+            {
+                mapping.FileIndexDetails.Remove(fileToRemove);
+            }
+            
+            // 处理新增和修改的文件
+            task.CurrentFile = "正在处理新增和修改的文件...";
+            task.ProgressPercentage = 40;
+            await _persistenceService.UpdateTaskAsync(task);
+            
+            var fileDetailDict = mapping.FileIndexDetails.ToDictionary(fd => fd.NormalizedFilePath, fd => fd);
+            var processedFiles = 0;
+            var totalFiles = currentFiles.Count;
+            
+            foreach (var filePath in currentFiles)
+            {
+                var relativePath = filePath.GetRelativePath(task.CodebasePath);
+                var normalizedRelativePath = relativePath.NormalizePath();
+                
+                task.CurrentFile = $"处理文件: {relativePath}";
+                task.ProgressPercentage = 40 + (processedFiles * 50 / totalFiles);
+                await _persistenceService.UpdateTaskAsync(task);
+                
+                if (fileDetailDict.TryGetValue(normalizedRelativePath, out var existingDetail))
+                {
+                    // 文件已存在，检查是否修改
+                    var currentLastWriteTime = File.GetLastWriteTimeUtc(filePath);
+                    
+                    if (currentLastWriteTime > existingDetail.LastIndexed)
+                    {
+                        // 文件已修改，需要重新索引
+                        _logger.LogDebug("文件已修改: {FilePath}", relativePath);
+                        
+                        var updateSuccess = await UpdateFileIndexAsync(filePath, mapping.CollectionName);
+                        if (updateSuccess)
+                        {
+                            modifiedFiles++;
+                            existingDetail.LastIndexed = DateTime.UtcNow;
+                            _logger.LogInformation("成功更新文件索引: {FilePath}", relativePath);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("更新文件索引失败: {FilePath}", relativePath);
+                        }
+                    }
+                    else
+                    {
+                        // 文件未修改
+                        unchangedFiles++;
+                        _logger.LogDebug("文件未修改: {FilePath}", relativePath);
+                    }
+                }
+                else
+                {
+                    // 新增文件，需要索引
+                    _logger.LogDebug("发现新增文件: {FilePath}", relativePath);
+                    
+                    var snippets = _searchService.ExtractCSharpSnippets(filePath);
+                    if (snippets.Any())
+                    {
+                        await _searchService.BatchIndexSnippetsAsync(snippets, mapping.CollectionName);
+                        newFiles++;
+                        
+                        // 添加到 FileIndexDetails
+                        var newFileDetail = new FileIndexDetail
+                        {
+                            FilePath = relativePath,
+                            NormalizedFilePath = normalizedRelativePath,
+                            LastIndexed = DateTime.UtcNow,
+                            FileHash = null
+                        };
+                        
+                        mapping.FileIndexDetails.Add(newFileDetail);
+                        _logger.LogInformation("成功索引新增文件: {FilePath}, 片段数: {Count}", relativePath, snippets.Count);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("新增文件 {FilePath} 没有提取到代码片段", relativePath);
+                    }
+                }
+                
+                processedFiles++;
+            }
+            
+            // 更新任务状态
+            task.Status = IndexingStatus.Completed;
+            task.EndTime = DateTime.UtcNow;
+            task.ProgressPercentage = 100;
+            task.CurrentFile = "增量重建完成";
+            
+            // 更新映射状态
+            mapping.IndexingStatus = "completed";
+            mapping.LastIndexed = DateTime.UtcNow;
+            mapping.Statistics.TotalFiles = currentFiles.Count;
+            mapping.Statistics.LastIndexingDuration = $"{(task.EndTime - task.StartTime)?.TotalSeconds:F1}s";
+            mapping.Statistics.LastUpdateTime = DateTime.UtcNow;
+            
+            await _configManager.UpdateMapping(mapping);
+            
+            // 清理已完成的任务
+            await _persistenceService.CleanupTaskAsync(task.Id);
+            
+            _logger.LogInformation("增量重建任务完成: {Path}, 删除:{Deleted}, 新增:{New}, 修改:{Modified}, 未变:{Unchanged}, 耗时:{Duration}s",
+                task.CodebasePath, deletedFiles, newFiles, modifiedFiles, unchangedFiles,
+                (task.EndTime - task.StartTime)?.TotalSeconds);
+        }
+        catch (Exception ex)
+        {
+            task.Status = IndexingStatus.Failed;
+            task.ErrorMessage = ex.Message;
+            task.EndTime = DateTime.UtcNow;
+            task.CurrentFile = "增量重建失败";
+            
+            // 更新失败状态到持久化存储
+            await _persistenceService.UpdateTaskAsync(task);
+            
+            _logger.LogError(ex, "增量重建任务失败: {Path}", task.CodebasePath);
+            
+            // 尝试更新映射状态为失败
+            try
+            {
+                mapping.IndexingStatus = "failed";
+                await _configManager.UpdateMapping(mapping);
+            }
+            catch (Exception updateEx)
+            {
+                _logger.LogError(updateEx, "更新失败状态时出错");
+            }
+            
+            // 延迟清理失败的任务
+            _ = Task.Delay(TimeSpan.FromHours(1)).ContinueWith(async _ =>
+            {
+                await _persistenceService.CleanupTaskAsync(task.Id);
+            });
+        }
+        finally
+        {
+            _runningTasks.TryRemove(normalizedPath, out _);
+        }
     }
 
     /// <summary>
@@ -423,7 +712,6 @@ public class IndexingTaskManager
     {
         try
         {
-            
             if (!File.Exists(filePath) || !filePath.IsSupportedExtension(new List<string> { ".cs" }))
             {
                 return false;
@@ -443,11 +731,19 @@ public class IndexingTaskManager
             {
                 await _searchService.BatchIndexSnippetsAsync(snippets, collectionName);
                 _logger.LogInformation("文件索引更新完成: {FilePath}, 片段数: {Count}", filePath, snippets.Count);
+                
+                // 🔥 新功能：同步更新 FileIndexDetails
+                await UpdateFileIndexDetailsAsync(filePath, collectionName);
+                
                 return true;
             }
             else
             {
                 _logger.LogDebug("文件 {FilePath} 没有提取到代码片段", filePath);
+                
+                // 🔥 新功能：即使没有片段，也要更新 FileIndexDetails
+                await UpdateFileIndexDetailsAsync(filePath, collectionName);
+                
                 return true; // 删除成功但没有新内容也算成功
             }
         }
@@ -455,6 +751,91 @@ public class IndexingTaskManager
         {
             _logger.LogError(ex, "更新文件索引失败: {FilePath}", filePath);
             return false;
+        }
+    }
+    
+    /// <summary>
+    /// 更新文件的索引详情记录
+    /// </summary>
+    private async Task UpdateFileIndexDetailsAsync(string filePath, string collectionName)
+    {
+        try
+        {
+            // 根据 collectionName 找到对应的 CodebaseMapping
+            var mapping = _configManager.GetAllMappings().FirstOrDefault(m => m.CollectionName == collectionName);
+            if (mapping == null)
+            {
+                _logger.LogWarning("无法找到集合 {CollectionName} 对应的映射", collectionName);
+                return;
+            }
+            
+            var relativePath = filePath.GetRelativePath(mapping.CodebasePath);
+            var normalizedRelativePath = relativePath.NormalizePath();
+            
+            // 查找或创建 FileIndexDetail
+            var existingDetail = mapping.FileIndexDetails.FirstOrDefault(fd => fd.NormalizedFilePath == normalizedRelativePath);
+            if (existingDetail != null)
+            {
+                // 更新现有记录
+                existingDetail.LastIndexed = DateTime.UtcNow;
+                _logger.LogDebug("更新 FileIndexDetail: {FilePath}", relativePath);
+            }
+            else
+            {
+                // 创建新记录（用于新增文件）
+                var newDetail = new FileIndexDetail
+                {
+                    FilePath = relativePath,
+                    NormalizedFilePath = normalizedRelativePath,
+                    LastIndexed = DateTime.UtcNow,
+                    FileHash = null
+                };
+                
+                mapping.FileIndexDetails.Add(newDetail);
+                _logger.LogDebug("创建新 FileIndexDetail: {FilePath}", relativePath);
+            }
+            
+            // 保存映射更改
+            await _configManager.UpdateMapping(mapping);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新 FileIndexDetails 失败: {FilePath}", filePath);
+        }
+    }
+    
+    /// <summary>
+    /// 删除文件的索引详情记录
+    /// </summary>
+    private async Task RemoveFileIndexDetailsAsync(string filePath, string collectionName)
+    {
+        try
+        {
+            // 根据 collectionName 找到对应的 CodebaseMapping
+            var mapping = _configManager.GetAllMappings().FirstOrDefault(m => m.CollectionName == collectionName);
+            if (mapping == null)
+            {
+                _logger.LogWarning("无法找到集合 {CollectionName} 对应的映射", collectionName);
+                return;
+            }
+            
+            var relativePath = filePath.GetRelativePath(mapping.CodebasePath);
+            var normalizedRelativePath = relativePath.NormalizePath();
+            
+            // 查找并移除 FileIndexDetail
+            var detailToRemove = mapping.FileIndexDetails.FirstOrDefault(fd => fd.NormalizedFilePath == normalizedRelativePath);
+            if (detailToRemove != null)
+            {
+                mapping.FileIndexDetails.Remove(detailToRemove);
+                _logger.LogDebug("移除 FileIndexDetail: {FilePath}", relativePath);
+                
+                // 保存映射更改
+                await _configManager.UpdateMapping(mapping);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "移除 FileIndexDetails 失败: {FilePath}", filePath);
         }
     }
 
