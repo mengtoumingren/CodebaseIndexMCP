@@ -192,3 +192,61 @@
 * 提高了系统的自动化程度
 * 增强了服务间协作能力
 * 保持了系统的高可用性
+[2025-06-14 20:00:00] - **嵌入向量抽象层创建完成 (阶段一)**
+
+## 已完成任务
+
+* ✅ 创建 `IEmbeddingProvider` 接口
+* ✅ 创建嵌入向量模型类:
+    * `EmbeddingRequest.cs`
+    * `EmbeddingResponse.cs`
+    * `EmbeddingProviderSettings.cs`
+    * `EmbeddingConfiguration.cs`
+* ✅ 创建 `EmbeddingProviderType` 枚举
+* ✅ 创建 `EmbeddingProviderFactory` 工厂类
+* ✅ 更新 `appsettings.json` 添加 `EmbeddingProviders` 配置节
+
+## 当前任务
+
+* 🎯 嵌入向量抽象层基础架构已完成。
+
+## 下一步
+
+* 准备进入第二阶段：重构现有 DashScope 实现以使用新抽象层。
+[2025-06-14 20:07:00] - **嵌入向量现有实现重构完成 (阶段二)**
+
+## 已完成任务
+
+* ✅ 创建 `DashScopeEmbeddingProvider` 类并实现 `IEmbeddingProvider` 接口。
+* ✅ 将原 `EnhancedCodeSemanticSearch` 中的 DashScope API 调用逻辑迁移到 `DashScopeEmbeddingProvider`。
+* ✅ 重构 `EnhancedCodeSemanticSearch` 以通过 `EmbeddingProviderFactory` 使用 `IEmbeddingProvider`。
+* ✅ 更新 `Program.cs` 以正确配置和注入新服务 (`EmbeddingConfiguration`, `EmbeddingProviderFactory`, `EnhancedCodeSemanticSearch` 新构造函数)。
+* ✅ 更新 `EmbeddingProviderFactory` 以能实例化 `DashScopeEmbeddingProvider`。
+* ✅ 项目成功编译。
+
+## 当前任务
+
+* 🎯 现有 DashScope 实现已成功重构至新抽象层。
+
+## 下一步
+
+* 准备进入第三阶段：添加对新嵌入向量提供商（OpenAI, Azure OpenAI, HuggingFace）的支持。
+[2025-06-14 20:11:00] - **新嵌入向量提供商支持添加完成 (阶段三)**
+
+## 已完成任务
+
+* ✅ 实现 `OpenAIEmbeddingProvider` 并集成到工厂。
+* ✅ 实现 `AzureOpenAIEmbeddingProvider` 并集成到工厂。
+* ✅ 实现 `HuggingFaceEmbeddingProvider` 并集成到工厂。
+* ✅ `EmbeddingProviderFactory` 已更新以支持所有新提供商。
+* ✅ `appsettings.json` 结构支持新提供商的配置。
+* ✅ 项目成功编译（存在一些非阻塞性警告，待后续处理）。
+
+## 当前任务
+
+* 🎯 对 OpenAI, Azure OpenAI, HuggingFace 提供商的基础支持已实现。
+
+## 下一步
+
+* 准备进入第四阶段：测试和优化。包括单元测试、集成测试、性能测试和文档更新。
+* 处理编译警告（CS8618, CS1998, CS4014）以提高代码质量。

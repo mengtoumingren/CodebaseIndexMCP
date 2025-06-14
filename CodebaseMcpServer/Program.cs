@@ -1,8 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration; // Added for IConfiguration if not implicitly available
 using CodebaseMcpServer.Tools;
 using CodebaseMcpServer.Services;
+using CodebaseMcpServer.Services.Embedding; // Added for Embedding services
+using CodebaseMcpServer.Services.Embedding.Models; // Added for Embedding configuration models
+using CodebaseMcpServer.Models; // Added for CodeSearchOptions
 using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,17 +20,20 @@ builder.Logging.AddDebug();
 builder.Services.AddSingleton<IndexConfigManager>();
 builder.Services.AddSingleton<TaskPersistenceService>();
 builder.Services.AddSingleton<QdrantConnectionMonitor>();
-builder.Services.AddSingleton<EnhancedCodeSemanticSearch>(provider =>
-{
-    var configuration = provider.GetRequiredService<IConfiguration>();
-    var logger = provider.GetRequiredService<ILogger<EnhancedCodeSemanticSearch>>();
-    
-    var apiKey = configuration.GetValue<string>("CodeSearch:DashScopeApiKey") ?? "sk-a239bd73d5b947ed955d03d437ca1e70";
-    var qdrantHost = configuration.GetValue<string>("CodeSearch:QdrantConfig:Host") ?? "localhost";
-    var qdrantPort = configuration.GetValue<int>("CodeSearch:QdrantConfig:Port", 6334);
-    
-    return new EnhancedCodeSemanticSearch(apiKey, qdrantHost, qdrantPort, logger);
-});
+
+// 配置选项读取
+builder.Services.Configure<CodeSearchOptions>(
+    builder.Configuration.GetSection("CodeSearch"));
+builder.Services.Configure<EmbeddingConfiguration>(
+    builder.Configuration.GetSection(EmbeddingConfiguration.ConfigSectionName));
+
+// 注册嵌入向量服务
+builder.Services.AddHttpClient(); // Ensure HttpClientFactory is available
+builder.Services.AddSingleton<EmbeddingProviderFactory>();
+// Specific providers like DashScopeEmbeddingProvider will be instantiated by the factory.
+
+// 更新 EnhancedCodeSemanticSearch 注册以使用构造函数注入
+builder.Services.AddSingleton<EnhancedCodeSemanticSearch>();
 
 // 注册核心服务（移除循环依赖）
 builder.Services.AddSingleton<IndexingTaskManager>();

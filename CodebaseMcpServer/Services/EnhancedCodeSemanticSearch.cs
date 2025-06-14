@@ -1,45 +1,52 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.RegularExpressions;
-using Newtonsoft.Json;
+using Microsoft.Extensions.Options; // Added for IOptions
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using CodebaseMcpServer.Models;
+using CodebaseMcpServer.Services.Embedding;
 
 namespace CodebaseMcpServer.Services;
 
 /// <summary>
 /// 增强版代码语义搜索服务 - 支持多集合管理
 /// </summary>
-public class EnhancedCodeSemanticSearch
+public class EnhancedCodeSemanticSearch : IDisposable
 {
-    private readonly string _apiKey;
     private readonly string _qdrantHost;
     private readonly int _qdrantPort;
-    private readonly int _embeddingDim = 1024;
     private readonly QdrantClient _client;
     private readonly ILogger<EnhancedCodeSemanticSearch> _logger;
-    
-    // API限制常量
-    private const int MAX_BATCH_SIZE = 10;
-    private const int MAX_TOKEN_LENGTH = 8192;
+    private readonly EmbeddingProviderFactory _embeddingProviderFactory;
+    private IEmbeddingProvider? _defaultEmbeddingProvider; // Cache for default provider
+
+    // 文本处理常量 - 这些可以保留，因为它们是通用的
     private const int APPROX_CHARS_PER_TOKEN = 4;
 
     public EnhancedCodeSemanticSearch(
-        string apiKey,
-        string qdrantHost = "localhost",
-        int qdrantPort = 6334,
+        IOptions<CodeSearchOptions> codeSearchOptions,
+        EmbeddingProviderFactory embeddingProviderFactory,
         ILogger<EnhancedCodeSemanticSearch>? logger = null)
     {
-        _apiKey = apiKey;
-        _qdrantHost = qdrantHost;
-        _qdrantPort = qdrantPort;
+        var config = codeSearchOptions?.Value ?? throw new ArgumentNullException(nameof(codeSearchOptions), "CodeSearchOptions configuration is missing.");
+        var qdrantConfig = config.QdrantConfig ?? throw new ArgumentNullException(nameof(config.QdrantConfig), "QdrantConfig section is missing in CodeSearchOptions.");
+        
+        _qdrantHost = qdrantConfig.Host;
+        _qdrantPort = qdrantConfig.Port;
+        
+        _embeddingProviderFactory = embeddingProviderFactory ?? throw new ArgumentNullException(nameof(embeddingProviderFactory));
         _logger = logger ?? CreateNullLogger();
         
         _logger.LogDebug("连接Qdrant服务器: {Host}:{Port}", _qdrantHost, _qdrantPort);
         _client = new QdrantClient(_qdrantHost, _qdrantPort);
     }
 
+    private IEmbeddingProvider GetDefaultProvider()
+    {
+        _defaultEmbeddingProvider ??= _embeddingProviderFactory.GetDefaultProvider();
+        return _defaultEmbeddingProvider;
+    }
+    
     private static ILogger<EnhancedCodeSemanticSearch> CreateNullLogger()
     {
         using var factory = LoggerFactory.Create(builder => builder.AddConsole());
@@ -69,7 +76,7 @@ public class EnhancedCodeSemanticSearch
                     collectionName,
                     new VectorParams
                     {
-                        Size = (ulong)_embeddingDim,
+                        Size = (ulong)GetDefaultProvider().GetEmbeddingDimension(), // Use provider's dimension
                         Distance = Distance.Cosine
                     });
                 _logger.LogInformation("集合 {CollectionName} 创建成功", collectionName);
@@ -127,68 +134,7 @@ public class EnhancedCodeSemanticSearch
         return truncated;
     }
 
-    /// <summary>
-    /// 获取文本嵌入向量
-    /// </summary>
-    private async Task<List<List<float>>> GetEmbeddings(List<string> texts)
-    {
-        if (texts.Count > MAX_BATCH_SIZE)
-        {
-            throw new ArgumentException($"批量大小不能超过 {MAX_BATCH_SIZE}，当前为 {texts.Count}");
-        }
-        
-        var processedTexts = new List<string>();
-        for (int i = 0; i < texts.Count; i++)
-        {
-            var text = texts[i];
-            var estimatedTokens = EstimateTokenCount(text);
-            
-            if (estimatedTokens > MAX_TOKEN_LENGTH)
-            {
-                _logger.LogWarning("文本 {Index} 长度过长 (约{Tokens}个Token)，将被截断", i, estimatedTokens);
-                text = TruncateText(text, MAX_TOKEN_LENGTH);
-            }
-            
-            processedTexts.Add(text);
-        }
-        
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
-        httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        
-        var payload = new
-        {
-            model = "text-embedding-v4",
-            input = processedTexts,
-            dimension = "1024",
-            encoding_format = "float"
-        };
-        
-        var content = new StringContent(
-            JsonConvert.SerializeObject(payload),
-            Encoding.UTF8,
-            new MediaTypeHeaderValue("application/json"));
-            
-        try
-        {
-            var response = await httpClient.PostAsync(
-                "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
-                content);
-            
-            response.EnsureSuccessStatusCode();
-            var jsonResponse = await response.Content.ReadAsStringAsync();
-            var embeddingResponse = JsonConvert.DeserializeObject<EmbeddingResponse>(jsonResponse);
-            
-            return embeddingResponse?.Data?.Select(item => item.Embedding)?.ToList() ?? new List<List<float>>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取嵌入向量失败");
-            return Enumerable.Repeat(
-                Enumerable.Repeat(0.0f, _embeddingDim).ToList(),
-                processedTexts.Count).ToList();
-        }
-    }
+    // Old GetEmbeddings method has been removed.
 
     /// <summary>
     /// 提取C#代码片段
@@ -402,54 +348,101 @@ public class EnhancedCodeSemanticSearch
     /// <summary>
     /// 批量索引代码片段
     /// </summary>
-    public async Task BatchIndexSnippetsAsync(List<CodeSnippet> snippets, string collectionName, int batchSize = MAX_BATCH_SIZE)
+    public async Task BatchIndexSnippetsAsync(List<CodeSnippet> snippets, string collectionName)
     {
-        _logger.LogInformation("开始批量索引 {Count} 个代码片段到集合 {CollectionName}", snippets.Count, collectionName);
+        var embeddingProvider = GetDefaultProvider();
+        int providerBatchSize = embeddingProvider.GetMaxBatchSize();
+        int maxTokenLength = embeddingProvider.GetMaxTokenLength();
+        int expectedDimension = embeddingProvider.GetEmbeddingDimension();
+
+        _logger.LogInformation("开始批量索引 {Count} 个代码片段到集合 {CollectionName} 使用 {ProviderName}",
+            snippets.Count, collectionName, embeddingProvider.ProviderName);
         
-        for (int i = 0; i < snippets.Count; i += batchSize)
+        for (int i = 0; i < snippets.Count; i += providerBatchSize)
         {
-            var batch = snippets.Skip(i).Take(batchSize).ToList();
-            _logger.LogDebug("处理批次 {BatchNum}/{TotalBatches}，包含 {Count} 个片段", 
-                i / batchSize + 1, (snippets.Count + batchSize - 1) / batchSize, batch.Count);
+            var batch = snippets.Skip(i).Take(providerBatchSize).ToList();
+            _logger.LogDebug("处理批次 {BatchNum}/{TotalBatches}，包含 {Count} 个片段",
+                i / providerBatchSize + 1, (snippets.Count + providerBatchSize - 1) / providerBatchSize, batch.Count);
             
-            var codes = batch.Select(snippet => snippet.Code).ToList();
+            var processedCodes = new List<string>();
+            var originalBatchItems = new List<CodeSnippet>(); // To keep track of snippets corresponding to processedCodes
+
+            foreach(var snippet in batch)
+            {
+                var text = snippet.Code;
+                var estimatedTokens = EstimateTokenCount(text);
+                if (estimatedTokens > maxTokenLength)
+                {
+                    _logger.LogWarning("代码片段来自 {FilePath} (行 {StartLine}-{EndLine}) 长度过长 (约{Tokens}个Token)，将被截断至 {MaxTokens} Tokens.",
+                        snippet.FilePath, snippet.StartLine, snippet.EndLine, estimatedTokens, maxTokenLength);
+                    text = TruncateText(text, maxTokenLength);
+                }
+                processedCodes.Add(text);
+                originalBatchItems.Add(snippet); // Keep original snippet for payload
+            }
             
+            if (!processedCodes.Any())
+            {
+                _logger.LogWarning("批次 {BatchNum} 没有可处理的代码片段（可能全部为空）。", i / providerBatchSize + 1);
+                continue;
+            }
+
             try
             {
-                var embeddings = await GetEmbeddings(codes);
-                var points = new List<PointStruct>();
-                
-                for (int j = 0; j < batch.Count; j++)
+                var embeddings = await embeddingProvider.GetEmbeddingsAsync(processedCodes);
+                if (embeddings.Count != processedCodes.Count)
                 {
-                    var vector = embeddings[j].Select(v => (double)v).ToList();
+                    _logger.LogError("批次 {BatchNum} 索引失败: 获取到的嵌入向量数量 ({EmbeddingsCount}) 与处理后的代码片段数量 ({ProcessedCount}) 不匹配。",
+                        i / providerBatchSize + 1, embeddings.Count, processedCodes.Count);
+                    continue;
+                }
+
+                var points = new List<PointStruct>();
+                for (int j = 0; j < embeddings.Count; j++)
+                {
+                    if (embeddings[j].Count != expectedDimension)
+                    {
+                         _logger.LogWarning("批次 {BatchNum}, 片段 {SnippetIndex}: 嵌入向量维度 ({ActualDim}) 与提供商声明的维度 ({ExpectedDim}) 不符。跳过此片段。",
+                            i / providerBatchSize + 1, j, embeddings[j].Count, expectedDimension);
+                        continue;
+                    }
+
+                    var currentSnippet = originalBatchItems[j]; // Use the original snippet for payload
                     var payload = new Dictionary<string, Value>
                     {
-                        ["filePath"] = new Value { StringValue = batch[j].FilePath },
-                        ["namespace"] = new Value { StringValue = batch[j].Namespace ?? "" },
-                        ["className"] = new Value { StringValue = batch[j].ClassName ?? "" },
-                        ["methodName"] = new Value { StringValue = batch[j].MethodName ?? "" },
-                        ["code"] = new Value { StringValue = batch[j].Code },
-                        ["startLine"] = new Value { IntegerValue = batch[j].StartLine },
-                        ["endLine"] = new Value { IntegerValue = batch[j].EndLine }
+                        ["filePath"] = new Value { StringValue = currentSnippet.FilePath },
+                        ["namespace"] = new Value { StringValue = currentSnippet.Namespace ?? "" },
+                        ["className"] = new Value { StringValue = currentSnippet.ClassName ?? "" },
+                        ["methodName"] = new Value { StringValue = currentSnippet.MethodName ?? "" },
+                        ["code"] = new Value { StringValue = currentSnippet.Code }, // Store original, untruncated code
+                        ["startLine"] = new Value { IntegerValue = currentSnippet.StartLine },
+                        ["endLine"] = new Value { IntegerValue = currentSnippet.EndLine }
                     };
                     
                     var vectorData = new Vector();
-                    vectorData.Data.AddRange(vector.Select(v => (float)v));
+                    vectorData.Data.AddRange(embeddings[j]); // Embeddings are already float
                     
                     points.Add(new PointStruct
                     {
-                        Id = new PointId { Num = (ulong)(i + j) },
+                        Id = new PointId { Uuid = Guid.NewGuid().ToString() },
                         Vectors = new Vectors { Vector = vectorData },
                         Payload = { payload }
                     });
                 }
                 
-                await _client.UpsertAsync(collectionName, points);
-                _logger.LogDebug("批次 {BatchNum} 索引完成", i / batchSize + 1);
+                if (points.Any())
+                {
+                    await _client.UpsertAsync(collectionName, points);
+                    _logger.LogDebug("批次 {BatchNum} 索引完成，成功索引 {PointCount} 个点。", i / providerBatchSize + 1, points.Count);
+                }
+                else
+                {
+                    _logger.LogWarning("批次 {BatchNum} 没有可索引的点。", i / providerBatchSize + 1);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "批次 {BatchNum} 索引失败", i / batchSize + 1);
+                _logger.LogError(ex, "批次 {BatchNum} 索引失败", i / providerBatchSize + 1);
             }
         }
         
@@ -461,9 +454,34 @@ public class EnhancedCodeSemanticSearch
     /// </summary>
     public async Task<List<SearchResult>> SearchAsync(string query, string collectionName, int limit = 5)
     {
-        var queryEmbedding = await GetEmbeddings(new List<string> { query });
-        var queryVectorData = queryEmbedding[0].ToArray();
+        var embeddingProvider = GetDefaultProvider();
+        var processedQuery = TruncateText(query, embeddingProvider.GetMaxTokenLength());
         
+        List<List<float>> queryEmbeddingLists;
+        try
+        {
+            queryEmbeddingLists = await embeddingProvider.GetEmbeddingsAsync(new List<string> { processedQuery });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "获取查询 '{Query}' 的嵌入向量失败，使用提供商 {ProviderName}", query, embeddingProvider.ProviderName);
+            return new List<SearchResult>();
+        }
+        
+        if (queryEmbeddingLists == null || queryEmbeddingLists.Count == 0 || queryEmbeddingLists[0].Count == 0)
+        {
+            _logger.LogError("无法获取查询 '{Query}' 的嵌入向量 (结果为空)，使用提供商 {ProviderName}", query, embeddingProvider.ProviderName);
+            return new List<SearchResult>();
+        }
+        var queryVectorData = queryEmbeddingLists[0].ToArray();
+        
+        if (queryVectorData.Length != embeddingProvider.GetEmbeddingDimension())
+        {
+            _logger.LogError("查询向量维度 ({QueryDim}) 与提供商声明的维度 ({ProviderDim}) 不符。无法执行搜索。",
+                queryVectorData.Length, embeddingProvider.GetEmbeddingDimension());
+            return new List<SearchResult>();
+        }
+
         var searchResult = await _client.SearchAsync(
             collectionName,
             queryVectorData,
@@ -502,15 +520,4 @@ public class EnhancedCodeSemanticSearch
     }
 }
 
-// API响应模型（重用现有的）
-public class EmbeddingResponse
-{
-    [JsonProperty("data")]
-    public List<EmbeddingData> Data { get; set; } = new();
-}
-
-public class EmbeddingData
-{
-    [JsonProperty("embedding")]
-    public List<float> Embedding { get; set; } = new();
-}
+// Removed old EmbeddingResponse and EmbeddingData models as they are now in Services/Embedding/Models
