@@ -430,6 +430,13 @@ public class IndexingTaskManager
 
             _logger.LogDebug("更新文件索引: {FilePath}", filePath);
             
+            // 🔥 先删除文件的旧索引
+            var deleteSuccess = await _searchService.DeleteFileIndexAsync(filePath, collectionName);
+            if (!deleteSuccess)
+            {
+                _logger.LogWarning("删除文件旧索引失败，但继续更新: {FilePath}", filePath);
+            }
+            
             var snippets = _searchService.ExtractCSharpSnippets(filePath);
             if (snippets.Any())
             {
@@ -437,8 +444,11 @@ public class IndexingTaskManager
                 _logger.LogInformation("文件索引更新完成: {FilePath}, 片段数: {Count}", filePath, snippets.Count);
                 return true;
             }
-            
-            return false;
+            else
+            {
+                _logger.LogDebug("文件 {FilePath} 没有提取到代码片段", filePath);
+                return true; // 删除成功但没有新内容也算成功
+            }
         }
         catch (Exception ex)
         {

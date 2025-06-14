@@ -370,6 +370,15 @@ public class EnhancedCodeSemanticSearch : IDisposable
             foreach(var snippet in batch)
             {
                 var text = snippet.Code;
+                
+                // 检查代码片段是否为空或仅包含空白字符
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    _logger.LogWarning("跳过空代码片段来自 {FilePath} (行 {StartLine}-{EndLine})",
+                        snippet.FilePath, snippet.StartLine, snippet.EndLine);
+                    continue;
+                }
+                
                 var estimatedTokens = EstimateTokenCount(text);
                 if (estimatedTokens > maxTokenLength)
                 {
@@ -377,15 +386,28 @@ public class EnhancedCodeSemanticSearch : IDisposable
                         snippet.FilePath, snippet.StartLine, snippet.EndLine, estimatedTokens, maxTokenLength);
                     text = TruncateText(text, maxTokenLength);
                 }
+                
+                // 截断后再次检查是否为空
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    _logger.LogWarning("截断后代码片段变为空，跳过来自 {FilePath} (行 {StartLine}-{EndLine})",
+                        snippet.FilePath, snippet.StartLine, snippet.EndLine);
+                    continue;
+                }
+                
                 processedCodes.Add(text);
                 originalBatchItems.Add(snippet); // Keep original snippet for payload
             }
             
             if (!processedCodes.Any())
             {
-                _logger.LogWarning("批次 {BatchNum} 没有可处理的代码片段（可能全部为空）。", i / providerBatchSize + 1);
+                _logger.LogWarning("批次 {BatchNum} 没有可处理的代码片段（全部为空或无效）。", i / providerBatchSize + 1);
                 continue;
             }
+            
+            // 添加详细日志来帮助诊断
+            _logger.LogDebug("批次 {BatchNum} 处理完成: 原始片段数={OriginalCount}, 有效片段数={ValidCount}",
+                i / providerBatchSize + 1, batch.Count, processedCodes.Count);
 
             try
             {
@@ -509,6 +531,40 @@ public class EnhancedCodeSemanticSearch : IDisposable
         }
         
         return results;
+    }
+
+    /// <summary>
+    /// 删除指定文件的所有索引点
+    /// </summary>
+    public async Task<bool> DeleteFileIndexAsync(string filePath, string collectionName)
+    {
+        try
+        {
+            _logger.LogDebug("开始删除文件索引: {FilePath} from {CollectionName}", filePath, collectionName);
+            
+            // 使用 Delete 方法按条件删除点
+            var deleteResult = await _client.DeleteAsync(collectionName, new Filter
+            {
+                Must = {
+                    new Condition
+                    {
+                        Field = new FieldCondition
+                        {
+                            Key = "filePath",
+                            Match = new Qdrant.Client.Grpc.Match { Text = filePath }
+                        }
+                    }
+                }
+            });
+
+            _logger.LogInformation("成功删除文件 {FilePath} 的索引点，操作ID: {OperationId}", filePath, deleteResult.OperationId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "删除文件索引失败: {FilePath}", filePath);
+            return false;
+        }
     }
 
     /// <summary>
