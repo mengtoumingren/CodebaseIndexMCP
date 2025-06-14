@@ -16,16 +16,16 @@ class Program
                 collectionName: "csharp_code");
             Console.WriteLine("[DEBUG] 搜索系统初始化完成");
 
-            // 处理代码库
-            var codebasePath = @"D:\VSProject\WorkFlowEngine\workflow-engine\WorkFlowCore\WorkFlowCore.BusinessDemo.Web"; // 替换为实际C#代码库路径
-            Console.WriteLine($"[DEBUG] 开始处理代码库: {codebasePath}");
-            var indexedCount = await searchSystem.ProcessCodebase(codebasePath);
-            Console.WriteLine($"已索引 {indexedCount} 个C#代码片段");
+            // // 处理代码库
+            // var codebasePath = @"D:\VSProject\WorkFlowEngine\workflow-engine\WorkFlowCore\WorkFlowCore.BusinessDemo.Web"; // 替换为实际C#代码库路径
+            // Console.WriteLine($"[DEBUG] 开始处理代码库: {codebasePath}");
+            // var indexedCount = await searchSystem.ProcessCodebase(codebasePath);
+            // Console.WriteLine($"已索引 {indexedCount} 个C#代码片段");
 
             // 执行搜索
-            var query = "发起审批";
+            var query = "身份认证逻辑";
             Console.WriteLine($"[DEBUG] 开始搜索: {query}");
-            var results = await searchSystem.Search(query, limit: 3);
+            var results = await searchSystem.Search(query, limit: 10);
 
             // 显示结果
             Console.WriteLine($"\n搜索结果 - 查询: '{query}'");

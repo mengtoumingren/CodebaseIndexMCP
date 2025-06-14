@@ -32,28 +32,57 @@ namespace CodeSearch
         public CodeSnippet Snippet { get; set; } = new();
     }
 
-    // DashScope API响应模型
+    // Embeddings API响应模型
     public class EmbeddingResponse
     {
-        public int StatusCode { get; set; }
-        public string RequestId { get; set; } = string.Empty;
-        public string Code { get; set; } = string.Empty;
-        public string Message { get; set; } = string.Empty;
-        public EmbeddingOutput Output { get; set; } = new();
+        [JsonProperty("data")]
+        public List<EmbeddingData> Data { get; set; } = new();
+        
+        [JsonProperty("model")]
+        public string Model { get; set; } = string.Empty;
+        
+        [JsonProperty("object")]
+        public string Object { get; set; } = string.Empty;
+        
+        [JsonProperty("usage")]
+        public UsageInfo Usage { get; set; } = new();
+        
+        [JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
     }
 
-    public class EmbeddingOutput
+    public class EmbeddingData
     {
-        public List<EmbeddingItem> Embeddings { get; set; } = new();
-    }
-
-    public class EmbeddingItem
-    {
+        [JsonProperty("embedding")]
         public List<float> Embedding { get; set; } = new();
-        public int TextIndex { get; set; }
+        
+        [JsonProperty("index")]
+        public int Index { get; set; }
+        
+        [JsonProperty("object")]
+        public string Object { get; set; } = string.Empty;
     }
 
-    // 代码语义搜索主类
+    public class UsageInfo
+    {
+        [JsonProperty("prompt_tokens")]
+        public int PromptTokens { get; set; }
+        
+        [JsonProperty("total_tokens")]
+        public int TotalTokens { get; set; }
+    }
+
+    /// <summary>
+    /// 代码语义搜索主类
+    ///
+    /// 优化说明：
+    /// 1. 严格遵循DashScope API限制：
+    ///    - text-embedding-v4模型批量最多10条文本
+    ///    - 每条文本最长8,192 Token
+    /// 2. 智能文本截断：保持代码结构完整性
+    /// 3. Token估算：结合中英文特点进行估算
+    /// 4. 错误处理：批量处理中单个失败不影响整体流程
+    /// </summary>
     public class CodeSemanticSearch
     {
         private readonly string _apiKey;
@@ -62,6 +91,11 @@ namespace CodeSearch
         private readonly string _collectionName;
         private readonly int _embeddingDim = 1024;
         private readonly QdrantClient _client;
+        
+        // API限制常量
+        private const int MAX_BATCH_SIZE = 10; // text-embedding-v4模型最多支持10条
+        private const int MAX_TOKEN_LENGTH = 8192; // text-embedding-v4每条最长支持8,192 Token
+        private const int APPROX_CHARS_PER_TOKEN = 4; // 大约每4个字符=1个Token（估算值）
 
         public CodeSemanticSearch(
             string apiKey,
@@ -110,8 +144,87 @@ namespace CodeSearch
             }
         }
 
+        /// <summary>
+        /// 估算文本的Token数量
+        /// 这是一个简化的估算方法，实际Token数量可能会有差异
+        /// </summary>
+        private int EstimateTokenCount(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+                
+            // 简化的Token估算规则
+            // 1. 英文单词通常1个单词=1个Token
+            // 2. 中文字符通常1个字符=1个Token
+            // 3. 代码中的符号和关键字需要特殊处理
+            
+            var wordCount = text.Split(new char[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            var chineseCharCount = text.Count(c => c >= 0x4e00 && c <= 0x9fff); // 中文字符范围
+            
+            // 估算：英文单词 + 中文字符 + 符号补偿
+            var estimatedTokens = wordCount + chineseCharCount + (text.Length - wordCount - chineseCharCount) / 4;
+            
+            return Math.Max(estimatedTokens, text.Length / APPROX_CHARS_PER_TOKEN);
+        }
+
+        /// <summary>
+        /// 智能截断文本，保持代码结构完整性
+        /// </summary>
+        private string TruncateText(string text, int maxTokens)
+        {
+            if (EstimateTokenCount(text) <= maxTokens)
+                return text;
+                
+            // 按行分割，尝试保持代码结构
+            var lines = text.Split('\n');
+            var result = new StringBuilder();
+            var currentTokens = 0;
+            
+            foreach (var line in lines)
+            {
+                var lineTokens = EstimateTokenCount(line + "\n");
+                if (currentTokens + lineTokens > maxTokens)
+                {
+                    // 如果加上这一行会超过限制，就停止
+                    break;
+                }
+                result.AppendLine(line);
+                currentTokens += lineTokens;
+            }
+            
+            var truncated = result.ToString().TrimEnd();
+            Console.WriteLine($"[INFO] 文本从 {EstimateTokenCount(text)} Token 截断至 {EstimateTokenCount(truncated)} Token");
+            
+            return truncated;
+        }
+
         private async Task<List<List<float>>> GetEmbeddings(List<string> texts)
         {
+            // 检查批量大小限制
+            if (texts.Count > MAX_BATCH_SIZE)
+            {
+                throw new ArgumentException($"批量大小不能超过 {MAX_BATCH_SIZE}，当前为 {texts.Count}");
+            }
+            
+            // 检查每个文本的长度限制并智能截断
+            var processedTexts = new List<string>();
+            for (int i = 0; i < texts.Count; i++)
+            {
+                var text = texts[i];
+                var estimatedTokens = EstimateTokenCount(text);
+                
+                if (estimatedTokens > MAX_TOKEN_LENGTH)
+                {
+                    Console.WriteLine($"[WARNING] 文本 {i} 长度过长 (约{estimatedTokens}个Token)，将被智能截断至 {MAX_TOKEN_LENGTH} Token");
+                    text = TruncateText(text, MAX_TOKEN_LENGTH);
+                }
+                else
+                {
+                    Console.WriteLine($"[DEBUG] 文本 {i} 长度: 约{estimatedTokens}个Token，符合限制");
+                }
+                processedTexts.Add(text);
+            }
+            
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
             httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -119,7 +232,7 @@ namespace CodeSearch
             var payload = new
             {
                 model = "text-embedding-v4",
-                input = texts,
+                input = processedTexts,
                 dimension = "1024",
                 encoding_format = "float"
             };
@@ -132,14 +245,14 @@ namespace CodeSearch
             try
             {
                 var response = await httpClient.PostAsync(
-                    "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", 
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
                     content);
                 
                 response.EnsureSuccessStatusCode();
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 var embeddingResponse = JsonConvert.DeserializeObject<EmbeddingResponse>(jsonResponse);
                 
-                return embeddingResponse?.Output?.Embeddings
+                return embeddingResponse?.Data
                     ?.Select(item => item.Embedding)
                     ?.ToList() ?? new List<List<float>>();
             }
@@ -148,9 +261,94 @@ namespace CodeSearch
                 Console.WriteLine($"获取嵌入向量失败: {ex.Message}");
                 // 返回零向量作为备选
                 return Enumerable.Repeat(
-                    Enumerable.Repeat(0.0f, _embeddingDim).ToList(), 
-                    texts.Count).ToList();
+                    Enumerable.Repeat(0.0f, _embeddingDim).ToList(),
+                    processedTexts.Count).ToList();
             }
+        }
+
+        // 提取成员（方法/构造函数）体的辅助方法
+        private (List<string> codeLines, int endLine) ExtractMemberBody(string[] lines, int startLine)
+        {
+            var memberBody = new List<string>();
+            int j = startLine;
+            int braceCount = 0;
+            bool foundOpenBrace = false;
+            
+            // 首先添加方法签名行
+            memberBody.Add(lines[startLine]);
+            
+            // 检查方法签名行是否包含开括号
+            if (lines[startLine].Contains('{'))
+            {
+                braceCount = lines[startLine].Count(c => c == '{') - lines[startLine].Count(c => c == '}');
+                foundOpenBrace = true;
+            }
+            
+            j = startLine + 1;
+            
+            // 如果方法签名行没有开括号，寻找下一个开括号
+            while (j < lines.Length && !foundOpenBrace)
+            {
+                memberBody.Add(lines[j]);
+                if (lines[j].Contains('{'))
+                {
+                    braceCount = lines[j].Count(c => c == '{') - lines[j].Count(c => c == '}');
+                    foundOpenBrace = true;
+                }
+                j++;
+            }
+            
+            // 提取方法体直到找到匹配的闭括号
+            while (j < lines.Length && braceCount > 0)
+            {
+                int openBraces = lines[j].Count(c => c == '{');
+                int closeBraces = lines[j].Count(c => c == '}');
+                braceCount += openBraces - closeBraces;
+                
+                memberBody.Add(lines[j]);
+                
+                if (braceCount == 0)
+                {
+                    break;
+                }
+                
+                j++;
+            }
+            
+            return (memberBody, j);
+        }
+
+        // 提取简单成员（字段、简单属性等）的辅助方法
+        private (List<string> codeLines, int endLine) ExtractSimpleMember(string[] lines, int startLine)
+        {
+            var memberLines = new List<string>();
+            int j = startLine;
+            
+            // 添加当前行
+            memberLines.Add(lines[startLine]);
+            
+            // 如果当前行以分号结尾，直接返回
+            if (lines[startLine].TrimEnd().EndsWith(';'))
+            {
+                return (memberLines, startLine);
+            }
+            
+            // 否则继续查找到分号或大括号结束
+            j = startLine + 1;
+            while (j < lines.Length)
+            {
+                memberLines.Add(lines[j]);
+                
+                var trimmedLine = lines[j].TrimEnd();
+                if (trimmedLine.EndsWith(';') || trimmedLine.EndsWith('}'))
+                {
+                    break;
+                }
+                
+                j++;
+            }
+            
+            return (memberLines, j);
         }
 
         public List<CodeSnippet> ExtractCSharpSnippets(string filePath)
@@ -159,23 +357,34 @@ namespace CodeSearch
             
             try
             {
+                Console.WriteLine($"[DEBUG] 开始解析文件: {filePath}");
                 var content = File.ReadAllText(filePath);
-                var lines = content.Split('\n');
+                Console.WriteLine($"[DEBUG] 文件内容长度: {content.Length} 字符");
                 
-                // C#类和方法的正则表达式模式
-                var classPattern = new Regex(@"\s*(public|private|protected|internal|sealed|abstract|static)?\s*class\s+(\w+)\s*[:{]");
-                var methodPattern = new Regex(@"\s*(public|private|protected|internal|static|virtual|override|abstract)?\s*([\w<>]+)\s+(\w+)\s*\([^)]*\)\s*{");
+                // 统一换行符处理 - 诊断日志1：验证换行符问题
+                content = content.Replace("\r\n", "\n").Replace("\r", "\n");
+                var lines = content.Split('\n');
+                Console.WriteLine($"[DEBUG] 文件行数: {lines.Length}");
+                
+                // C#类和方法的正则表达式模式 - 全面优化版本
+                var classPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(sealed|abstract|static|partial)\s+)*class\s+(\w+)(?:<[\w\s,<>]*>)?(?:\s*:\s*[\w\s,<>\.]+)?\s*\{?", RegexOptions.IgnoreCase);
+                var methodPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|async)\s+)*(?:([\w<>\[\]?\.]+)\s+)?(\w+)(?:<[\w\s,<>]*>)?\s*\([^)]*\)\s*(?:where\s+[\w\s:<>,]*\s*)?\{?", RegexOptions.IgnoreCase);
+                var constructorPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*(?:base|this)\s*\([^)]*\)\s*)?\{?", RegexOptions.IgnoreCase);
+                var propertyPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|readonly)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:\{\s*(?:get|set)|\s*=\s*)", RegexOptions.IgnoreCase);
+                var fieldPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|readonly|const)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:=|;)", RegexOptions.IgnoreCase);
+                var eventPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract)\s+)*event\s+(?:([\w<>\[\]?\.]+)\s+)?(\w+)\s*(?:\{|\s*;)", RegexOptions.IgnoreCase);
                 
                 string? currentNamespace = null;
                 string? currentClass = null;
                 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    // 检测命名空间
-                    var namespaceMatch = Regex.Match(lines[i], @"\s*namespace\s+(\w+(?:\.\w+)*)\s*{");
+                    // 检测命名空间 - 优化版本支持文件范围命名空间
+                    var namespaceMatch = Regex.Match(lines[i], @"^\s*namespace\s+([\w.]+)\s*[{;]?");
                     if (namespaceMatch.Success)
                     {
                         currentNamespace = namespaceMatch.Groups[1].Value;
+                        Console.WriteLine($"[DEBUG] 找到命名空间: {currentNamespace} 在第 {i + 1} 行");
                         currentClass = null;
                         continue;
                     }
@@ -184,33 +393,63 @@ namespace CodeSearch
                     var classMatch = classPattern.Match(lines[i]);
                     if (classMatch.Success)
                     {
-                        currentClass = classMatch.Groups[2].Value;
+                        currentClass = classMatch.Groups[3].Value; // 更新组索引
+                        Console.WriteLine($"[DEBUG] 找到类: {currentClass} 在第 {i + 1} 行");
                         continue;
                     }
                     
-                    // 检测方法定义
+                    // 检测各种类成员定义
                     var methodMatch = methodPattern.Match(lines[i]);
+                    var constructorMatch = constructorPattern.Match(lines[i]);
+                    var propertyMatch = propertyPattern.Match(lines[i]);
+                    var fieldMatch = fieldPattern.Match(lines[i]);
+                    var eventMatch = eventPattern.Match(lines[i]);
+                    
+                    string? memberName = null;
+                    string memberType = "";
+                    bool hasBody = false;
+                    
                     if (methodMatch.Success && currentClass != null)
                     {
-                        var methodName = methodMatch.Groups[3].Value;
-                        
-                        // 提取方法体
-                        var methodBody = new List<string>();
-                        int j = i + 1;
-                        int braceCount = 1; // 当前方法的左大括号计数
-                        
-                        while (j < lines.Length)
-                        {
-                            braceCount += lines[j].Count(c => c == '{') - lines[j].Count(c => c == '}');
-                            methodBody.Add(lines[j]);
-                            
-                            if (braceCount == 0)
-                                break;
-                                
-                            j++;
-                        }
-                        
-                        var methodContent = string.Join("\n", methodBody);
+                        memberName = methodMatch.Groups[4].Value;
+                        memberType = "方法";
+                        hasBody = true;
+                        Console.WriteLine($"[DEBUG] 找到方法: {currentClass}.{memberName} 在第 {i + 1} 行");
+                    }
+                    else if (constructorMatch.Success && currentClass != null &&
+                             constructorMatch.Groups[2].Value == currentClass)
+                    {
+                        memberName = constructorMatch.Groups[2].Value;
+                        memberType = "构造函数";
+                        hasBody = true;
+                        Console.WriteLine($"[DEBUG] 找到构造函数: {currentClass}.{memberName} 在第 {i + 1} 行");
+                    }
+                    else if (propertyMatch.Success && currentClass != null)
+                    {
+                        memberName = propertyMatch.Groups[4].Value;
+                        memberType = "属性";
+                        hasBody = lines[i].Contains('{');
+                        Console.WriteLine($"[DEBUG] 找到属性: {currentClass}.{memberName} 在第 {i + 1} 行");
+                    }
+                    else if (fieldMatch.Success && currentClass != null)
+                    {
+                        memberName = fieldMatch.Groups[4].Value;
+                        memberType = "字段";
+                        hasBody = false;
+                        Console.WriteLine($"[DEBUG] 找到字段: {currentClass}.{memberName} 在第 {i + 1} 行");
+                    }
+                    else if (eventMatch.Success && currentClass != null)
+                    {
+                        memberName = eventMatch.Groups[4].Value;
+                        memberType = "事件";
+                        hasBody = lines[i].Contains('{');
+                        Console.WriteLine($"[DEBUG] 找到事件: {currentClass}.{memberName} 在第 {i + 1} 行");
+                    }
+                    
+                    if (memberName != null && currentClass != null)
+                    {
+                        // 提取成员内容
+                        var memberBody = hasBody ? ExtractMemberBody(lines, i) : ExtractSimpleMember(lines, i);
                         
                         // 创建代码片段信息
                         var snippet = new CodeSnippet
@@ -218,21 +457,27 @@ namespace CodeSearch
                             FilePath = filePath,
                             Namespace = currentNamespace,
                             ClassName = currentClass,
-                            MethodName = methodName,
-                            Code = lines[i] + "\n" + methodContent,
+                            MethodName = $"{memberName} ({memberType})",
+                            Code = string.Join("\n", memberBody.codeLines),
                             StartLine = i + 1,
-                            EndLine = j + 1
+                            EndLine = memberBody.endLine + 1
                         };
                         
+                        Console.WriteLine($"[DEBUG] 创建代码片段: {currentNamespace}.{currentClass}.{memberName} ({memberType})");
+                        Console.WriteLine($"[DEBUG] 代码长度: {snippet.Code.Length} 字符, 行范围: {snippet.StartLine}-{snippet.EndLine}");
                         snippets.Add(snippet);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"处理文件 {filePath} 失败: {ex.Message}");
+                Console.WriteLine($"[DEBUG] 处理文件 {filePath} 失败:");
+                Console.WriteLine($"[DEBUG] 异常类型: {ex.GetType().Name}");
+                Console.WriteLine($"[DEBUG] 异常消息: {ex.Message}");
+                Console.WriteLine($"[DEBUG] 堆栈跟踪: {ex.StackTrace}");
             }
             
+            Console.WriteLine($"[DEBUG] 文件 {filePath} 解析完成，共提取 {snippets.Count} 个代码片段");
             return snippets;
         }
 
@@ -257,48 +502,62 @@ namespace CodeSearch
             return allSnippets.Count;
         }
 
-        private async Task BatchIndexSnippets(List<CodeSnippet> snippets, int batchSize = 64)
+        private async Task BatchIndexSnippets(List<CodeSnippet> snippets, int batchSize = MAX_BATCH_SIZE)
         {
+            Console.WriteLine($"[INFO] 开始批量索引 {snippets.Count} 个代码片段，批量大小: {batchSize}");
+            
             for (int i = 0; i < snippets.Count; i += batchSize)
             {
                 var batch = snippets.Skip(i).Take(batchSize).ToList();
+                Console.WriteLine($"[INFO] 处理批次 {i / batchSize + 1}/{(snippets.Count + batchSize - 1) / batchSize}，包含 {batch.Count} 个片段");
                 
                 // 提取代码文本
                 var codes = batch.Select(snippet => snippet.Code).ToList();
                 
-                // 生成嵌入向量
-                var embeddings = await GetEmbeddings(codes);
-                
-                // 准备点数据
-                var points = new List<PointStruct>();
-                for (int j = 0; j < batch.Count; j++)
+                try
                 {
-                    var vector = embeddings[j].Select(v => (double)v).ToList();
-                    var payload = new Dictionary<string, Value>
-                    {
-                        ["filePath"] = new Value { StringValue = batch[j].FilePath },
-                        ["namespace"] = new Value { StringValue = batch[j].Namespace ?? "" },
-                        ["className"] = new Value { StringValue = batch[j].ClassName ?? "" },
-                        ["methodName"] = new Value { StringValue = batch[j].MethodName ?? "" },
-                        ["code"] = new Value { StringValue = batch[j].Code },
-                        ["startLine"] = new Value { IntegerValue = batch[j].StartLine },
-                        ["endLine"] = new Value { IntegerValue = batch[j].EndLine }
-                    };
+                    // 生成嵌入向量
+                    var embeddings = await GetEmbeddings(codes);
                     
-                    var vectorData = new Vector();
-                    vectorData.Data.AddRange(vector.Select(v => (float)v));
-                    
-                    points.Add(new PointStruct
+                    // 准备点数据
+                    var points = new List<PointStruct>();
+                    for (int j = 0; j < batch.Count; j++)
                     {
-                        Id = new PointId { Num = (ulong)(i + j) },
-                        Vectors = new Vectors { Vector = vectorData },
-                        Payload = { payload }
-                    });
+                        var vector = embeddings[j].Select(v => (double)v).ToList();
+                        var payload = new Dictionary<string, Value>
+                        {
+                            ["filePath"] = new Value { StringValue = batch[j].FilePath },
+                            ["namespace"] = new Value { StringValue = batch[j].Namespace ?? "" },
+                            ["className"] = new Value { StringValue = batch[j].ClassName ?? "" },
+                            ["methodName"] = new Value { StringValue = batch[j].MethodName ?? "" },
+                            ["code"] = new Value { StringValue = batch[j].Code },
+                            ["startLine"] = new Value { IntegerValue = batch[j].StartLine },
+                            ["endLine"] = new Value { IntegerValue = batch[j].EndLine }
+                        };
+                        
+                        var vectorData = new Vector();
+                        vectorData.Data.AddRange(vector.Select(v => (float)v));
+                        
+                        points.Add(new PointStruct
+                        {
+                            Id = new PointId { Num = (ulong)(i + j) },
+                            Vectors = new Vectors { Vector = vectorData },
+                            Payload = { payload }
+                        });
+                    }
+                    
+                    // 上传到Qdrant
+                    await _client.UpsertAsync(_collectionName, points);
+                    Console.WriteLine($"[INFO] 批次 {i / batchSize + 1} 索引完成");
                 }
-                
-                // 上传到Qdrant
-                await _client.UpsertAsync(_collectionName, points);
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] 批次 {i / batchSize + 1} 索引失败: {ex.Message}");
+                    // 继续处理下一个批次
+                }
             }
+            
+            Console.WriteLine($"[INFO] 批量索引完成，共处理 {snippets.Count} 个代码片段");
         }
 
         public async Task<List<SearchResult>> Search(string query, int limit = 5)
