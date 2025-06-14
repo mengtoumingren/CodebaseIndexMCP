@@ -36,11 +36,11 @@ public sealed class CodeSearchTools
     /// <param name="codebasePath">要搜索的代码库路径（可选，如果不提供则需要确保代码库已被索引）</param>
     /// <param name="limit">返回结果数量限制（可选，默认10）</param>
     /// <returns>格式化的搜索结果</returns>
-    [McpServerTool, Description("根据自然语言描述搜索相关代码片段，返回匹配的方法、类和代码块")]
+    [McpServerTool, Description("根据自然语言描述搜索相关代码片段，返回匹配的方法、类和代码块。当需要查看项目中特定功能或逻辑的代码实现时，可以使用此工具进行语义搜索。")]
     public static async Task<string> SemanticCodeSearch(
-        [Description("自然语言搜索查询，例如：'身份认证逻辑'、'数据库连接'、'文件上传处理'")] string query,
-        [Description("要搜索的代码库路径，如果不提供则使用默认配置路径")] string? codebasePath = null,
-        [Description("返回结果数量限制")] int limit = 10)
+        [Description("自然语言搜索查询，例如：'身份认证逻辑'、'数据库连接'、'文件上传处理'、'异常处理机制'、'配置管理'")] string query,
+        [Description("要搜索的代码库路径。如果不提供则默认使用当前工作目录。必须提供完整的绝对路径，例如：'C:\\Projects\\MyApp' 或 '/home/user/projects/myapp'")] string? codebasePath = null,
+        [Description("返回结果数量限制，默认为10个结果")] int limit = 10)
     {
         try
         {
