@@ -423,6 +423,7 @@ public class IndexingTaskManager
     {
         try
         {
+            
             if (!File.Exists(filePath) || !filePath.IsSupportedExtension(new List<string> { ".cs" }))
             {
                 return false;

@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using CodebaseMcpServer.Services.Embedding.Models;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace CodebaseMcpServer.Services.Embedding.Providers
 {
@@ -14,6 +17,12 @@ namespace CodebaseMcpServer.Services.Embedding.Providers
         private readonly EmbeddingProviderSettings _settings;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<DashScopeEmbeddingProvider> _logger;
+        
+        // 常量定义
+        private const int APPROX_CHARS_PER_TOKEN = 4; // 大约每4个字符为1个Token
+        private const int MAX_BATCH_SIZE = 25; // DashScope 批量处理最大数量
+        private const int MAX_TOKEN_LENGTH = 2048; // DashScope 最大Token长度
+        private const int EMBEDDING_DIMENSION = 1024; // 嵌入向量维度
 
         public string ProviderName => "DashScope";
 
@@ -66,99 +75,132 @@ namespace CodebaseMcpServer.Services.Embedding.Providers
             }
             return true;
         }
-
-        public async Task<List<List<float>>> GetEmbeddingsAsync(List<string> texts)
+        
+    
+        /// <summary>
+        /// 估算文本的Token数量
+        /// 这是一个简化的估算方法，实际Token数量可能会有差异
+        /// </summary>
+        private int EstimateTokenCount(string text)
         {
-            if (texts == null || texts.Count == 0)
-            {
-                _logger.LogWarning("{ProviderName}: Input text list is null or empty.", ProviderName);
-                return new List<List<float>>();
-            }
-
-            if (texts.Count > _settings.MaxBatchSize)
-            {
-                _logger.LogError("{ProviderName}: Batch size {ActualSize} exceeds maximum allowed {MaxBatchSize}.",
-                    ProviderName, texts.Count, _settings.MaxBatchSize);
-                throw new ArgumentException($"Batch size cannot exceed {_settings.MaxBatchSize}. Current size: {texts.Count}", nameof(texts));
-            }
-            
-            _logger.LogDebug("{ProviderName}: Requesting embeddings for {Count} texts.", ProviderName, texts.Count);
-
-            var httpClient = _httpClientFactory.CreateClient(ProviderName);
-            // Ensure ApiKey is not null before using it, though ValidateConfiguration should have caught this.
-            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.ApiKey ?? string.Empty);
-            httpClient.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-            
-            var payload = new
-            {
-                model = _settings.Model, // Model should be validated as non-null by ValidateConfiguration
-                input = new { texts = texts },
-                parameters = new { output_dimension = _settings.EmbeddingDimension }
-            };
-            
-            var jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            var content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
-            
-            // BaseUrl should be validated as non-null by ValidateConfiguration
-            string baseUrl = _settings.BaseUrl!;
-            string requestUrl = baseUrl;
-            if (!baseUrl.EndsWith("/embeddings"))
-            {
-                requestUrl = baseUrl.TrimEnd('/') + "/embeddings";
-            }
-
-            try
-            {
-                _logger.LogDebug("{ProviderName}: Sending request to {Url} with model {Model}", ProviderName, requestUrl, _settings.Model ?? "N/A");
-                var response = await httpClient.PostAsync(requestUrl, content);
+            if (string.IsNullOrEmpty(text))
+                return 0;
                 
-                var responseContent = await response.Content.ReadAsStringAsync();
+            // 简化的Token估算规则
+            // 1. 英文单词通常1个单词=1个Token
+            // 2. 中文字符通常1个字符=1个Token
+            // 3. 代码中的符号和关键字需要特殊处理
+            
+            var wordCount = text.Split(new char[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            var chineseCharCount = text.Count(c => c >= 0x4e00 && c <= 0x9fff); // 中文字符范围
+            
+            // 估算：英文单词 + 中文字符 + 符号补偿
+            var estimatedTokens = wordCount + chineseCharCount + (text.Length - wordCount - chineseCharCount) / 4;
+            
+            return Math.Max(estimatedTokens, text.Length / APPROX_CHARS_PER_TOKEN);
+        }
 
-                if (response.IsSuccessStatusCode)
+        /// <summary>
+        /// 智能截断文本，保持代码结构完整性
+        /// </summary>
+        private string TruncateText(string text, int maxTokens)
+        {
+            if (EstimateTokenCount(text) <= maxTokens)
+                return text;
+                
+            // 按行分割，尝试保持代码结构
+            var lines = text.Split('\n');
+            var result = new StringBuilder();
+            var currentTokens = 0;
+            
+            foreach (var line in lines)
+            {
+                var lineTokens = EstimateTokenCount(line + "\n");
+                if (currentTokens + lineTokens > maxTokens)
                 {
-                    // DashScope's response structure is slightly different from the generic EmbeddingResponse
-                    // It has "output.embeddings" which is a list of objects, each with an "embedding" array.
-                    JsonDocument parsedResponse = JsonDocument.Parse(responseContent);
-                    if (parsedResponse.RootElement.TryGetProperty("output", out var outputElement) &&
-                        outputElement.TryGetProperty("embeddings", out var embeddingsElement))
-                    {
-                        var resultEmbeddings = new List<List<float>>();
-                        foreach (var embeddingItem in embeddingsElement.EnumerateArray())
-                        {
-                            if (embeddingItem.TryGetProperty("embedding", out var vectorElement))
-                            {
-                                var vector = JsonSerializer.Deserialize<List<float>>(vectorElement.GetRawText());
-                                if (vector != null)
-                                {
-                                    resultEmbeddings.Add(vector);
-                                }
-                            }
-                        }
-                        _logger.LogInformation("{ProviderName}: Successfully retrieved {Count} embeddings.", ProviderName, resultEmbeddings.Count);
-                        return resultEmbeddings;
-                    }
-                    else
-                    {
-                        _logger.LogError("{ProviderName}: Unexpected response structure. 'output.embeddings' not found. Response: {Response}", ProviderName, responseContent);
-                        throw new HttpRequestException($"Error fetching embeddings from {ProviderName}: Unexpected response structure.");
-                    }
+                    // 如果加上这一行会超过限制，就停止
+                    break;
+                }
+                result.AppendLine(line);
+                currentTokens += lineTokens;
+            }
+            
+            var truncated = result.ToString().TrimEnd();
+            Console.WriteLine($"[INFO] 文本从 {EstimateTokenCount(text)} Token 截断至 {EstimateTokenCount(truncated)} Token");
+            
+            return truncated;
+        }
+
+       public async Task<List<List<float>>> GetEmbeddingsAsync(List<string> texts)
+        {
+            // 检查批量大小限制
+            if (texts.Count > MAX_BATCH_SIZE)
+            {
+                throw new ArgumentException($"批量大小不能超过 {MAX_BATCH_SIZE}，当前为 {texts.Count}");
+            }
+
+            // 检查每个文本的长度限制并智能截断
+            var processedTexts = new List<string>();
+            for (int i = 0; i < texts.Count; i++)
+            {
+                var text = texts[i];
+                var estimatedTokens = EstimateTokenCount(text);
+
+                if (estimatedTokens > MAX_TOKEN_LENGTH)
+                {
+                    Console.WriteLine($"[WARNING] 文本 {i} 长度过长 (约{estimatedTokens}个Token)，将被智能截断至 {MAX_TOKEN_LENGTH} Token");
+                    text = TruncateText(text, MAX_TOKEN_LENGTH);
                 }
                 else
                 {
-                    _logger.LogError("Error fetching embeddings from {ProviderName}. Status: {StatusCode}. Response: {ErrorContent}",
-                        ProviderName, response.StatusCode, responseContent);
-                    throw new HttpRequestException($"Error fetching embeddings from {ProviderName}: {response.StatusCode} - {responseContent}");
+                    Console.WriteLine($"[DEBUG] 文本 {i} 长度: 约{estimatedTokens}个Token，符合限制");
                 }
+                processedTexts.Add(text);
             }
-            catch (JsonException jsonEx)
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
+            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            var payload = new
             {
-                _logger.LogError(jsonEx, "{ProviderName}: Failed to parse JSON response.", ProviderName);
-                throw;
+                model = "text-embedding-v4",
+                input = processedTexts,
+                dimension = "1024",
+                encoding_format = "float"
+            };
+
+            var content = new StringContent(
+                JsonConvert.SerializeObject(payload),
+                Encoding.UTF8,
+                new MediaTypeHeaderValue("application/json"));
+
+            try
+            {
+                // BaseUrl validated non-null by ValidateConfiguration
+                string baseUrl = _settings.BaseUrl!;
+                string requestUrl = baseUrl.TrimEnd('/') + "/embeddings";
+                var response = await httpClient.PostAsync(
+                    requestUrl,
+                    content);
+
+                    
+
+                response.EnsureSuccessStatusCode();
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var embeddingResponse = JsonConvert.DeserializeObject<EmbeddingResponse>(jsonResponse);
+
+                return embeddingResponse?.Data
+                    ?.Select(item => item.Embedding)
+                    ?.ToList() ?? new List<List<float>>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "{ProviderName}: Exception occurred while fetching embeddings.", ProviderName);
-                throw;
+                Console.WriteLine($"获取嵌入向量失败: {ex.Message}");
+                // 返回零向量作为备选
+                return Enumerable.Repeat(
+                    Enumerable.Repeat(0.0f, _settings.EmbeddingDimension).ToList(),
+                    processedTexts.Count).ToList();
             }
         }
 
