@@ -88,3 +88,58 @@
 
 * 需要确认用户是否准备好切换到Code模式开始实施
 * 实施计划包含4个阶段，预计10天完成
+[2025-06-14 17:17:00] - **索引任务改进完成**
+
+## 当前焦点
+
+* 成功实现索引任务的本地持久化功能
+* 成功实现Qdrant连接状态监控
+* 索引任务现在支持断线重连和自动恢复
+* 服务异常重启后可以继续执行未完成的任务
+
+## 最近更改
+
+* 新增TaskPersistenceService - 负责任务的本地存储和恢复
+* 新增QdrantConnectionMonitor - 实时监控Qdrant连接状态
+* 更新IndexingTaskManager - 集成任务持久化和连接监控
+* 更新配置文件 - 添加TaskPersistence和QdrantMonitor配置项
+* 项目构建成功，功能完整
+
+## 核心改进
+
+1. **任务持久化**：
+   - 创建任务时自动保存到task-storage目录
+   - 任务完成后自动清理本地记录
+   - 支持任务状态实时更新
+   - 服务重启后自动恢复未完成任务
+
+2. **连接监控**：
+   - 每30秒检查一次Qdrant连接状态
+   - 连接断开时暂停索引任务
+   - 连接恢复时自动继续执行
+   - 支持连接超时和重试机制
+
+## 开放性问题/问题
+
+* 所有功能已实现，项目可以正常运行
+* 建议在实际环境中测试连接断开和恢复场景
+[2025-06-14 17:32:00] - **IndexConfigManager 线程安全问题修复**
+
+## 当前焦点
+
+* 修复了 IndexConfigManager.cs 中的 SemaphoreSlim 死锁问题
+* 避免了在已获取锁的情况下重复尝试获取同一个锁
+* 确保配置文件操作的线程安全性
+
+## 最近更改
+
+* 修改了 AddCodebaseMapping, UpdateMapping, RemoveMapping, UpdateMappingStatistics 方法
+* 将这些方法中的 SaveConfiguration() 调用替换为直接调用 SaveConfigurationInternal()
+* 手动设置 _config.LastUpdated 时间戳以保持一致性
+* 消除了潜在的死锁风险
+
+## 技术改进
+
+* 🔒 修复了 SemaphoreSlim 重复获取导致的死锁问题
+* ⚡ 提高了并发操作的可靠性
+* 🛡️ 增强了多线程环境下的稳定性

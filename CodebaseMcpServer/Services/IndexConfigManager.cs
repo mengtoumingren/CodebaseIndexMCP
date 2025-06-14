@@ -130,7 +130,8 @@ public class IndexConfigManager
             }
 
             _config.CodebaseMappings.Add(mapping);
-            await SaveConfiguration();
+            _config.LastUpdated = DateTime.UtcNow;
+            await SaveConfigurationInternal(_config);
             
             _logger.LogInformation("添加代码库映射: {Path} -> {Collection}", 
                 mapping.CodebasePath, mapping.CollectionName);
@@ -181,7 +182,8 @@ public class IndexConfigManager
             var index = _config.CodebaseMappings.IndexOf(existingMapping);
             _config.CodebaseMappings[index] = updatedMapping;
             
-            await SaveConfiguration();
+            _config.LastUpdated = DateTime.UtcNow;
+            await SaveConfigurationInternal(_config);
             
             _logger.LogInformation("更新代码库映射: {Path} -> {Collection}", 
                 updatedMapping.CodebasePath, updatedMapping.CollectionName);
@@ -210,7 +212,8 @@ public class IndexConfigManager
             }
 
             _config.CodebaseMappings.Remove(mapping);
-            await SaveConfiguration();
+            _config.LastUpdated = DateTime.UtcNow;
+            await SaveConfigurationInternal(_config);
             
             _logger.LogInformation("删除代码库映射: {Path} -> {Collection}", 
                 mapping.CodebasePath, mapping.CollectionName);
@@ -278,7 +281,8 @@ public class IndexConfigManager
             }
 
             updateAction(mapping.Statistics);
-            await SaveConfiguration();
+            _config.LastUpdated = DateTime.UtcNow;
+            await SaveConfigurationInternal(_config);
             return true;
         }
         finally

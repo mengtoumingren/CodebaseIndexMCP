@@ -73,3 +73,48 @@
 * 验证CreateIndexLibrary工具
 * 验证SemanticCodeSearch多集合功能
 * 验证文件监控服务
+[2025-06-14 17:16:00] - **索引任务改进完成**
+
+## 已完成任务
+
+* ✅ 创建任务持久化服务 (TaskPersistenceService)
+* ✅ 创建Qdrant连接监控服务 (QdrantConnectionMonitor)
+* ✅ 更新IndexingTaskManager集成新服务
+* ✅ 增加本地任务记录功能
+* ✅ 增加Qdrant连接状态检测
+* ✅ 实现任务暂停和恢复机制
+* ✅ 更新Program.cs注册新服务
+* ✅ 更新appsettings.json添加配置
+* ✅ 项目构建成功
+
+## 当前任务
+
+* 🎯 索引任务改进已完成
+
+## 功能特性
+
+* 📁 任务持久化：创建索引任务时保存到本地task-storage目录
+* 🔗 连接监控：实时监控Qdrant数据库连接状态
+* ⏸️ 智能暂停：连接断开时暂停任务，恢复时继续执行
+* 🔄 自动恢复：服务重启后自动恢复未完成任务
+* 🧹 自动清理：任务完成后自动清理本地记录
+[2025-06-14 17:32:00] - **索引配置管理器锁冲突修复完成**
+
+## 已完成任务
+
+* ✅ 修复 IndexConfigManager.cs 中的 SemaphoreSlim 死锁问题
+* ✅ 移除重复的 await _fileLock.WaitAsync() 调用
+* ✅ 在已获取锁的方法中直接调用 SaveConfigurationInternal
+* ✅ 确保 LastUpdated 时间戳正确更新
+
+## 问题详情
+
+* 🐛 发现在 AddCodebaseMapping, UpdateMapping, RemoveMapping, UpdateMappingStatistics 方法中存在重复获取锁的问题
+* 🔧 这些方法已获取 _fileLock 后，又调用 SaveConfiguration() 再次尝试获取同一个锁
+* ⚠️ SemaphoreSlim(1,1) 不支持同一线程重复获取，会导致死锁
+
+## 修复方案
+
+* 🛠️ 在已获取锁的方法中直接调用 SaveConfigurationInternal() 
+* 📝 手动设置 _config.LastUpdated = DateTime.UtcNow
+* ✅ 避免重复获取锁，保持线程安全性

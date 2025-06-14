@@ -14,6 +14,8 @@ builder.Logging.AddDebug();
 
 // 注册核心服务
 builder.Services.AddSingleton<IndexConfigManager>();
+builder.Services.AddSingleton<TaskPersistenceService>();
+builder.Services.AddSingleton<QdrantConnectionMonitor>();
 builder.Services.AddSingleton<EnhancedCodeSemanticSearch>(provider =>
 {
     var configuration = provider.GetRequiredService<IConfiguration>();
@@ -60,6 +62,8 @@ Console.WriteLine("  ✅ 多代码库索引管理");
 Console.WriteLine("  ✅ 语义代码搜索");
 Console.WriteLine("  ✅ 文件监控服务");
 Console.WriteLine("  ✅ 配置管理 (codebase-indexes.json)");
+Console.WriteLine("  ✅ 任务持久化 (task-storage/)");
+Console.WriteLine("  ✅ Qdrant连接监控");
 Console.WriteLine();
 Console.WriteLine("🔧 可用工具:");
 Console.WriteLine("  📚 CreateIndexLibrary    - 创建代码库索引");
