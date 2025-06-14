@@ -49,3 +49,17 @@
 * 成功添加了新的 SSE MCP 服务器配置到 mcp_settings.json
 * 配置名称：sse-server，端点：http://localhost:3001/sse
 * 使用 SSE (Server-Sent Events) 协议进行远程 MCP 服务器通信
+[2025-06-14 14:51:00] - **MCP 工具描述优化完成**
+
+## 最近更改
+
+* 优化了 CodeSearchTools.cs 中的工具和参数描述
+* 工具描述增加了使用场景提示，明确何时使用 MCP 查询功能  
+* codebasePath 参数补充了默认工作目录说明和完整路径要求
+* query 参数增加了更多搜索示例
+* limit 参数增加了默认值说明
+
+## 当前焦点
+
+* MCP 工具用户体验优化完成
+* 提高了工具描述的清晰度和可用性
