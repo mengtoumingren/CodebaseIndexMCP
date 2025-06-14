@@ -42,3 +42,10 @@
 * 成功添加了 codebase MCP 服务器配置到 mcp_settings.json
 * 配置使用 dotnet 命令执行 CodebaseMcpServer.dll
 * MCP 服务器名称为 "codebase"
+[2025-06-14 14:36:00] - **SSE MCP 服务器配置添加**
+
+## 最近更改
+
+* 成功添加了新的 SSE MCP 服务器配置到 mcp_settings.json
+* 配置名称：sse-server，端点：http://localhost:3001/sse
+* 使用 SSE (Server-Sent Events) 协议进行远程 MCP 服务器通信
