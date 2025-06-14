@@ -190,75 +190,11 @@ public sealed class CodeSearchTools
                    $"3. API 配置是否正确\n" +
                    $"4. 网络连接是否正常\n\n" +
                    $"🛠️ 故障排除:\n" +
-                   $" 使用 GetIndexingStatus 工具查看索引库状态\n" +
-                   $"📚 使用 ListSearchableCodebases 工具查看可用代码库\n" +
-                   $"🔄 如果索引损坏，可使用 RebuildIndex 工具重建索引\n\n" +
+                   $"💡 使用 GetIndexingStatus 工具查看索引库状态\n" +
+                   $"🔄 如果索引损坏，可使用 RebuildIndex 工具重建索引\n" +
+                   $"🏗️ 如果代码库未建立索引，请使用 CreateIndexLibrary 工具创建\n\n" +
                    $"⚡ 提示: SemanticCodeSearch 提供比文件遍历更高效的代码查找方式";
         }
     }
 
-    /// <summary>
-    /// 列出所有可搜索的代码库
-    /// </summary>
-    /// <returns>可搜索的代码库列表</returns>
-    [McpServerTool, Description("📚 列出可搜索代码库 - 显示所有已建立语义索引的代码库信息和统计数据。使用此工具查看当前可用的代码库，然后选择合适的代码库路径用于 SemanticCodeSearch 工具进行智能代码搜索。")]
-    public static async Task<string> ListSearchableCodebases()
-    {
-        try
-        {
-            if (_configManager == null)
-            {
-                return "❌ 服务未初始化，请重启MCP服务器";
-            }
-
-            var allMappings = _configManager.GetAllMappings();
-            var searchableMappings = allMappings.Where(m => m.IndexingStatus == "completed").ToList();
-
-            var resultBuilder = new StringBuilder();
-            resultBuilder.AppendLine("📚 可搜索的代码库列表");
-            resultBuilder.AppendLine();
-
-            if (!searchableMappings.Any())
-            {
-                resultBuilder.AppendLine("❌ 当前没有可搜索的代码库");
-                resultBuilder.AppendLine();
-                resultBuilder.AppendLine("💡 使用 CreateIndexLibrary 工具创建第一个索引库");
-                resultBuilder.AppendLine("🔍 使用 GetIndexingStatus 工具查看所有索引状态");
-            }
-            else
-            {
-                resultBuilder.AppendLine($"找到 {searchableMappings.Count} 个可搜索的代码库:");
-                resultBuilder.AppendLine();
-
-                foreach (var mapping in searchableMappings.OrderBy(m => m.FriendlyName))
-                {
-                    resultBuilder.AppendLine($"✅ {mapping.FriendlyName}");
-                    resultBuilder.AppendLine($"   📁 路径: {mapping.CodebasePath}");
-                    resultBuilder.AppendLine($"   📊 集合: {mapping.CollectionName}");
-                    resultBuilder.AppendLine($"   📦 代码片段: {mapping.Statistics.IndexedSnippets:N0}");
-                    resultBuilder.AppendLine($"   📄 文件数: {mapping.Statistics.TotalFiles:N0}");
-                    resultBuilder.AppendLine($"   👁️ 监控状态: {(mapping.IsMonitoring ? "✅ 启用" : "⏸️ 禁用")}");
-                    resultBuilder.AppendLine($"   📅 最后更新: {mapping.Statistics.LastUpdateTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
-                    resultBuilder.AppendLine();
-                }
-
-                resultBuilder.AppendLine("🚀 快速开始语义搜索:");
-                resultBuilder.AppendLine("  1️⃣ 复制上述任一代码库路径");
-                resultBuilder.AppendLine("  2️⃣ 使用 SemanticCodeSearch 工具，填入路径和自然语言查询");
-                resultBuilder.AppendLine("  3️⃣ 获得精准的代码片段，无需遍历整个文件");
-                resultBuilder.AppendLine();
-                resultBuilder.AppendLine("💡 搜索技巧:");
-                resultBuilder.AppendLine("  🎯 使用具体功能描述：'用户登录验证' 而非 '登录'");
-                resultBuilder.AppendLine("  🔧 包含技术细节：'JWT令牌解析' 而非 '令牌'");
-                resultBuilder.AppendLine("  📝 描述具体行为：'文件上传错误处理' 而非 '错误'");
-            }
-
-            return resultBuilder.ToString();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[ERROR] 列出代码库时发生错误: {ex.Message}");
-            return $"❌ 列出代码库时发生错误: {ex.Message}";
-        }
-    }
 }
