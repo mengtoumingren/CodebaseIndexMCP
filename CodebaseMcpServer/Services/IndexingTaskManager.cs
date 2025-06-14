@@ -16,6 +16,8 @@ public class IndexingTaskManager
     private readonly IConfiguration _configuration;
     private readonly TaskPersistenceService _persistenceService;
     private readonly QdrantConnectionMonitor _connectionMonitor;
+    private readonly IServiceProvider _serviceProvider;  // 用于延迟获取 FileWatcherService
+    private FileWatcherService? _fileWatcherService; // 延迟初始化
 
     public IndexingTaskManager(
         ILogger<IndexingTaskManager> logger,
@@ -23,7 +25,8 @@ public class IndexingTaskManager
         EnhancedCodeSemanticSearch searchService,
         IConfiguration configuration,
         TaskPersistenceService persistenceService,
-        QdrantConnectionMonitor connectionMonitor)
+        QdrantConnectionMonitor connectionMonitor,
+        IServiceProvider serviceProvider)
     {
         _logger = logger;
         _configManager = configManager;
@@ -31,9 +34,27 @@ public class IndexingTaskManager
         _configuration = configuration;
         _persistenceService = persistenceService;
         _connectionMonitor = connectionMonitor;
+        _serviceProvider = serviceProvider;
+        
+        _logger.LogDebug("IndexingTaskManager 构造函数开始执行");
         
         // 启动时恢复未完成的任务
         _ = Task.Run(RestorePendingTasksAsync);
+        
+        _logger.LogDebug("IndexingTaskManager 构造函数执行完成");
+    }
+
+    /// <summary>
+    /// 延迟获取 FileWatcherService 以避免循环依赖
+    /// </summary>
+    private FileWatcherService GetFileWatcherService()
+    {
+        if (_fileWatcherService == null)
+        {
+            _fileWatcherService = _serviceProvider.GetRequiredService<FileWatcherService>();
+            _logger.LogDebug("延迟获取 FileWatcherService 成功");
+        }
+        return _fileWatcherService;
     }
 
     /// <summary>
@@ -253,6 +274,26 @@ public class IndexingTaskManager
             
             await _configManager.UpdateMapping(mapping);
             
+            // 🔥 新功能：索引完成后自动启动文件监控
+            try
+            {
+                var fileWatcherService = GetFileWatcherService();
+                var watcherCreated = await fileWatcherService.CreateWatcher(mapping);
+                if (watcherCreated)
+                {
+                    _logger.LogInformation("索引完成后已自动启动文件监控: {FriendlyName} -> {CollectionName}",
+                        mapping.FriendlyName, mapping.CollectionName);
+                }
+                else
+                {
+                    _logger.LogWarning("索引完成后启动文件监控失败: {Path}", mapping.CodebasePath);
+                }
+            }
+            catch (Exception watcherEx)
+            {
+                _logger.LogError(watcherEx, "索引完成后启动文件监控时发生错误: {Path}", mapping.CodebasePath);
+            }
+            
             // 清理已完成的任务
             await _persistenceService.CleanupTaskAsync(task.Id);
             
@@ -303,6 +344,7 @@ public class IndexingTaskManager
     /// </summary>
     public IndexingTask? GetTaskStatus(string taskId)
     {
+        //验证文件变更刷新
         return _runningTasks.Values.FirstOrDefault(t => t.Id == taskId);
     }
 

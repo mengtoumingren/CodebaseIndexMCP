@@ -31,10 +31,10 @@ public sealed class IndexManagementTools
     /// <param name="codebasePath">要创建索引的代码库目录的完整绝对路径</param>
     /// <param name="friendlyName">可选的索引库友好名称，如果不提供则使用目录名</param>
     /// <returns>索引创建结果</returns>
-    [McpServerTool, Description("为指定的代码库目录创建索引库，支持多代码库管理。创建后会自动开始文件监控，实时更新索引。")]
+    [McpServerTool, Description("为代码库创建语义搜索索引，创建后可使用 SemanticCodeSearch 进行智能代码搜索。支持自动文件监控和索引更新。")]
     public static async Task<string> CreateIndexLibrary(
-        [Description("要创建索引的代码库目录的完整绝对路径，例如：'d:/VSProject/MyApp' 或 'C:\\Projects\\MyProject'")] string codebasePath,
-        [Description("可选的索引库友好名称，如果不提供则使用目录名作为友好名称")] string? friendlyName = null)
+        [Description("代码库目录的完整路径，通常是当前工作目录，例如：'d:/VSProject/MyApp' 或 'C:\\Projects\\MyProject'")] string codebasePath,
+        [Description("可选的索引库友好名称，如果不提供则使用目录名")] string? friendlyName = null)
     {
         try
         {
@@ -139,9 +139,10 @@ public sealed class IndexManagementTools
     /// </summary>
     /// <param name="taskId">可选的任务ID，如果不提供则显示所有索引状态</param>
     /// <returns>索引状态信息</returns>
-    [McpServerTool, Description("查询索引库的创建状态和统计信息，可以查看特定任务或所有索引库的状态")]
+    [McpServerTool, Description("查看索引库状态和统计信息，可以查看特定代码库或所有索引库的状态")]
     public static async Task<string> GetIndexingStatus(
-        [Description("可选的任务ID，如果提供则查看特定任务状态，否则显示所有索引库状态")] string? taskId = null)
+        [Description("可选的代码库路径，如果提供则查看该代码库的索引状态")] string? codebasePath = null,
+        [Description("可选的任务ID，如果提供则查看特定任务状态")] string? taskId = null)
     {
         try
         {
@@ -152,7 +153,58 @@ public sealed class IndexManagementTools
 
             var response = new StringBuilder();
 
-            if (!string.IsNullOrEmpty(taskId))
+            if (!string.IsNullOrEmpty(codebasePath))
+            {
+                // 查询特定代码库状态
+                string normalizedPath;
+                try
+                {
+                    normalizedPath = Path.GetFullPath(codebasePath);
+                }
+                catch (Exception ex)
+                {
+                    return $"❌ 无效的路径格式: {ex.Message}";
+                }
+
+                var mapping = _configManager.GetMappingByPath(normalizedPath);
+                if (mapping == null)
+                {
+                    response.AppendLine($"📋 代码库索引状态");
+                    response.AppendLine($"📁 路径: {normalizedPath}");
+                    response.AppendLine($"📊 状态: ❌ 未建立索引");
+                    response.AppendLine();
+                    response.AppendLine($"💡 使用 CreateIndexLibrary 工具为此代码库创建索引");
+                }
+                else
+                {
+                    response.AppendLine($"📋 代码库索引状态");
+                    response.AppendLine($"📁 路径: {mapping.CodebasePath}");
+                    response.AppendLine($"🏷️ 名称: {mapping.FriendlyName}");
+                    response.AppendLine($"📊 集合: {mapping.CollectionName}");
+                    response.AppendLine($"📊 状态: {GetMappingStatusEmoji(mapping.IndexingStatus)} {mapping.IndexingStatus}");
+                    response.AppendLine($"📦 代码片段: {mapping.Statistics.IndexedSnippets:N0}");
+                    response.AppendLine($"📄 文件数: {mapping.Statistics.TotalFiles:N0}");
+                    response.AppendLine($"👁️ 监控状态: {(mapping.IsMonitoring ? "✅ 启用" : "⏸️ 禁用")}");
+                    response.AppendLine($"📅 创建时间: {mapping.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+                    response.AppendLine($"📅 最后更新: {mapping.Statistics.LastUpdateTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
+                    
+                    // 查找相关的运行中任务
+                    var runningTasks = _taskManager.GetRunningTasks()
+                        .Where(t => Path.GetFullPath(t.CodebasePath) == normalizedPath)
+                        .ToList();
+                    
+                    if (runningTasks.Any())
+                    {
+                        response.AppendLine();
+                        response.AppendLine("🔄 运行中的任务:");
+                        foreach (var task in runningTasks)
+                        {
+                            response.AppendLine($"  📋 {task.Id[..8]}... - {task.Status} ({task.ProgressPercentage:F1}%)");
+                        }
+                    }
+                }
+            }
+            else if (!string.IsNullOrEmpty(taskId))
             {
                 // 查询特定任务状态
                 var task = _taskManager.GetTaskStatus(taskId);
@@ -291,7 +343,7 @@ public sealed class IndexManagementTools
     /// </summary>
     /// <param name="codebasePath">要重建索引的代码库路径</param>
     /// <returns>重建结果</returns>
-    [McpServerTool, Description("重建指定代码库的索引，会删除现有索引并重新创建")]
+    [McpServerTool, Description("重建代码库索引，清除现有索引数据并重新创建，用于解决索引损坏或需要完全更新的情况")]
     public static async Task<string> RebuildIndex(
         [Description("要重建索引的代码库路径")] string codebasePath)
     {

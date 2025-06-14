@@ -31,10 +31,10 @@ public sealed class CodeSearchTools
     /// <param name="codebasePath">要搜索的代码库路径，从本地配置获取对应集合名称</param>
     /// <param name="limit">返回结果数量限制（可选，默认10）</param>
     /// <returns>格式化的搜索结果</returns>
-    [McpServerTool, Description("在指定代码库中进行语义代码搜索，根据自然语言描述查找相关代码片段。支持多代码库管理，需要先使用 CreateIndexLibrary 工具创建索引。")]
+    [McpServerTool, Description("直接在代码库中进行语义搜索，根据自然语言描述查找相关代码片段。如果代码库未建立索引，会提示是否创建索引库。")]
     public static async Task<string> SemanticCodeSearch(
         [Description("自然语言搜索查询，例如：'身份认证逻辑'、'数据库连接'、'文件上传处理'、'异常处理机制'、'配置管理'、'用户登录验证'、'数据加密'等")] string query,
-        [Description("要搜索的代码库路径，必须是已创建索引的代码库路径，例如：'d:/VSProject/MyApp' 或 'C:\\Projects\\MyProject'")] string codebasePath,
+        [Description("要搜索的代码库路径，通常是当前工作目录，例如：'d:/VSProject/MyApp' 或 'C:\\Projects\\MyProject'")] string codebasePath,
         [Description("返回结果数量限制，默认为10个结果")] int limit = 10)
     {
         try
@@ -72,10 +72,16 @@ public sealed class CodeSearchTools
             var mapping = _configManager.GetMappingByPath(normalizedPath);
             if (mapping == null)
             {
-                return $"❌ 指定的代码库未建立索引\n" +
+                return $"📋 代码库未建立索引\n" +
                        $"📁 路径: {normalizedPath}\n" +
-                       $"💡 请先使用 CreateIndexLibrary 工具为此代码库创建索引\n" +
-                       $"🔍 使用 GetIndexingStatus 工具查看已建立的索引库";
+                       $"\n" +
+                       $"❓ 是否为此代码库创建索引库？\n" +
+                       $"✅ 创建后可立即进行语义搜索\n" +
+                       $"🔍 请使用 CreateIndexLibrary 工具创建索引，参数：\n" +
+                       $"   - codebasePath: {normalizedPath}\n" +
+                       $"   - friendlyName: {Path.GetFileName(normalizedPath)} (可选)\n" +
+                       $"\n" +
+                       $"💡 创建完成后，重新执行此搜索即可获得结果";
             }
 
             // 检查索引状态
@@ -182,7 +188,7 @@ public sealed class CodeSearchTools
     /// 列出所有可搜索的代码库
     /// </summary>
     /// <returns>可搜索的代码库列表</returns>
-    [McpServerTool, Description("列出所有已建立索引且可以搜索的代码库，显示代码库信息和统计数据")]
+    [McpServerTool, Description("列出所有已建立索引的代码库信息和统计数据，用于查看当前可搜索的代码库")]
     public static async Task<string> ListSearchableCodebases()
     {
         try

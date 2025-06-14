@@ -7,6 +7,12 @@ class Program
     {
         try
         {
+            //测试文件变更
+
+
+
+
+            
             Console.WriteLine("[DEBUG] 程序开始执行");
             
             // 初始化搜索系统

@@ -14,27 +14,45 @@ public class FileWatcherService : BackgroundService
     private readonly Timer? _batchProcessor;
     private readonly ILogger<FileWatcherService> _logger;
     private readonly IndexConfigManager _configManager;
-    private readonly IndexingTaskManager _taskManager;
+    private readonly IServiceProvider _serviceProvider;  // 用于延迟获取 IndexingTaskManager
     private readonly IConfiguration _configuration;
     private readonly EnhancedCodeSemanticSearch _searchService;
+    private IndexingTaskManager? _taskManager; // 延迟初始化
 
     public FileWatcherService(
         ILogger<FileWatcherService> logger,
         IndexConfigManager configManager,
-        IndexingTaskManager taskManager,
+        IServiceProvider serviceProvider,
         IConfiguration configuration,
         EnhancedCodeSemanticSearch searchService)
     {
         _logger = logger;
         _configManager = configManager;
-        _taskManager = taskManager;
+        _serviceProvider = serviceProvider;
         _configuration = configuration;
         _searchService = searchService;
         
+        _logger.LogDebug("FileWatcherService 构造函数开始执行");
+        
         // 启动批处理定时器
         var batchDelay = _configuration.GetValue<int>("FileWatcher:BatchProcessingDelay", 5000);
-        _batchProcessor = new Timer(ProcessPendingChanges, null, 
+        _batchProcessor = new Timer(ProcessPendingChanges, null,
             TimeSpan.Zero, TimeSpan.FromMilliseconds(batchDelay));
+            
+        _logger.LogDebug("FileWatcherService 构造函数执行完成");
+    }
+
+    /// <summary>
+    /// 延迟获取 IndexingTaskManager 以避免循环依赖
+    /// </summary>
+    private IndexingTaskManager GetTaskManager()
+    {
+        if (_taskManager == null)
+        {
+            _taskManager = _serviceProvider.GetRequiredService<IndexingTaskManager>();
+            _logger.LogDebug("延迟获取 IndexingTaskManager 成功");
+        }
+        return _taskManager;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -356,7 +374,8 @@ public class FileWatcherService : BackgroundService
                 case FileChangeType.Modified:
                     if (File.Exists(change.FilePath))
                     {
-                        return await _taskManager.UpdateFileIndexAsync(change.FilePath, change.CollectionName);
+                        var taskManager = GetTaskManager();
+                        return await taskManager.UpdateFileIndexAsync(change.FilePath, change.CollectionName);
                     }
                     break;
 

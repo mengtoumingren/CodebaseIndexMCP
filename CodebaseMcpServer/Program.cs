@@ -28,8 +28,10 @@ builder.Services.AddSingleton<EnhancedCodeSemanticSearch>(provider =>
     return new EnhancedCodeSemanticSearch(apiKey, qdrantHost, qdrantPort, logger);
 });
 
+// 注册核心服务（移除循环依赖）
 builder.Services.AddSingleton<IndexingTaskManager>();
-builder.Services.AddHostedService<FileWatcherService>();
+builder.Services.AddSingleton<FileWatcherService>();
+builder.Services.AddHostedService<FileWatcherService>(provider => provider.GetRequiredService<FileWatcherService>());
 
 // 添加 MCP 服务器配置
 builder.Services.AddMcpServer()
@@ -128,3 +130,4 @@ Console.WriteLine("==========================================");
 Console.WriteLine();
 
 app.Run();
+//为何更新失败了
