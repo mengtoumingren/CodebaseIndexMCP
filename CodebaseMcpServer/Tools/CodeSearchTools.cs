@@ -31,7 +31,7 @@ public sealed class CodeSearchTools
     /// <param name="codebasePath">要搜索的代码库路径，从本地配置获取对应集合名称</param>
     /// <param name="limit">返回结果数量限制（可选，默认10）</param>
     /// <returns>格式化的搜索结果</returns>
-    [McpServerTool, Description("🔍 智能代码片段搜索工具 - 根据自然语言描述精准定位相关代码片段，避免遍历读取整个文件。通过语义搜索直接获取目标代码段及其上下文信息，大幅提升代码查找效率。特别适用于：查找特定功能实现、定位错误代码、理解代码逻辑、获取代码示例等场景。如果代码库未建立索引，会提示创建索引库。")]
+    [McpServerTool, Description("🔍 **首选代码查询工具** - 智能代码片段搜索，根据自然语言描述精准定位相关代码片段，避免遍历读取整个文件。通过语义搜索直接获取目标代码段及其上下文信息，大幅提升代码查找效率。特别适用于：查找特定功能实现、定位错误代码、理解代码逻辑、获取代码示例等场景。如果代码库未建立索引，会提示创建索引库。")]
     public static async Task<string> SemanticCodeSearch(
         [Description("🎯 自然语言搜索查询 - 使用描述性语言精确表达要查找的代码功能。高效查询示例：'用户登录验证逻辑'、'数据库连接池管理'、'文件上传错误处理'、'JWT令牌生成'、'配置文件读取'、'异步任务处理'、'缓存机制实现'、'日志记录功能'、'API错误响应'、'数据验证规则'等。避免使用过于宽泛的查询如'函数'、'类'等。")] string query,
         [Description("📁 代码库路径 - 要搜索的代码库根目录路径。通常使用当前工作目录。支持格式：'d:/VSProject/MyApp'、'C:\\Projects\\MyProject'、'./src'等。系统会自动标准化路径格式。")] string codebasePath,
@@ -113,14 +113,9 @@ public sealed class CodeSearchTools
                        $"  🔍 如果功能确实存在，可能需要更新索引或检查代码是否最近有变更";
             }
 
-            // 格式化搜索结果
+            // 格式化搜索结果 - 精简版
             var resultBuilder = new StringBuilder();
-            resultBuilder.AppendLine($"🎯 智能代码搜索结果 - 查询: '{query}'");
-            resultBuilder.AppendLine($"📁 代码库: {mapping.FriendlyName}");
-            resultBuilder.AppendLine($"📍 索引集合: {mapping.CollectionName}");
-            resultBuilder.AppendLine();
-            resultBuilder.AppendLine($"✅ 找到 {results.Count} 个精准匹配的代码片段（按相关度排序）:");
-            resultBuilder.AppendLine($"💡 这些片段已包含完整上下文，无需再读取整个文件");
+            resultBuilder.AppendLine($"🎯 查询: '{query}' | 📁 {mapping.FriendlyName} | ✅ {results.Count}个结果");
             resultBuilder.AppendLine();
 
             for (int i = 0; i < results.Count; i++)
@@ -128,45 +123,33 @@ public sealed class CodeSearchTools
                 var result = results[i];
                 var snippet = result.Snippet;
 
-                resultBuilder.AppendLine($"--- 结果 {i + 1} (相似度: {result.Score:F4}) ---");
+                resultBuilder.AppendLine($"## 结果 {i + 1} (相似度: {result.Score:F4})");
                 
                 // 显示相对路径更友好
                 var relativePath = snippet.FilePath.GetRelativePath(mapping.CodebasePath);
-                resultBuilder.AppendLine($"📄 文件: {relativePath}");
+                resultBuilder.AppendLine($"📄 **文件**: {relativePath} | 📍 第{snippet.StartLine}-{snippet.EndLine}行");
                 
+                // 精简元数据显示
+                var metadata = new List<string>();
                 if (!string.IsNullOrEmpty(snippet.Namespace))
-                    resultBuilder.AppendLine($"📦 命名空间: {snippet.Namespace}");
-                
+                    metadata.Add($"📦 {snippet.Namespace}");
                 if (!string.IsNullOrEmpty(snippet.ClassName))
-                    resultBuilder.AppendLine($"🏷️ 类: {snippet.ClassName}");
-                
+                    metadata.Add($"🏷️ {snippet.ClassName}");
                 if (!string.IsNullOrEmpty(snippet.MethodName))
-                    resultBuilder.AppendLine($"🔧 成员: {snippet.MethodName}");
-
-                resultBuilder.AppendLine($"📍 位置: 第 {snippet.StartLine}-{snippet.EndLine} 行");
-                resultBuilder.AppendLine();
+                    metadata.Add($"🔧 {snippet.MethodName}");
                 
+                if (metadata.Any())
+                    resultBuilder.AppendLine(string.Join(" | ", metadata));
+                
+                resultBuilder.AppendLine();
                 resultBuilder.AppendLine("```csharp");
                 resultBuilder.AppendLine(snippet.Code);
                 resultBuilder.AppendLine("```");
-                
-                if (i < results.Count - 1)
-                    resultBuilder.AppendLine(); // 添加空行分隔
+                resultBuilder.AppendLine();
             }
 
-            // 添加搜索统计信息和使用指导
-            resultBuilder.AppendLine();
-            resultBuilder.AppendLine("📊 搜索统计信息:");
-            resultBuilder.AppendLine($"  📦 总索引片段: {mapping.Statistics.IndexedSnippets:N0}");
-            resultBuilder.AppendLine($"  📄 总文件数: {mapping.Statistics.TotalFiles:N0}");
-            resultBuilder.AppendLine($"  🎯 匹配结果: {results.Count}/{limit}");
-            resultBuilder.AppendLine($"  📅 索引更新: {mapping.Statistics.LastUpdateTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
-            resultBuilder.AppendLine();
-            resultBuilder.AppendLine("💡 使用建议:");
-            resultBuilder.AppendLine("  ✅ 上述代码片段已包含完整的上下文信息，可直接分析使用");
-            resultBuilder.AppendLine("  🚀 相比读取整个文件，语义搜索更精准高效");
-            resultBuilder.AppendLine("  🔍 如需查找其他相关功能，请使用不同的查询词重新搜索");
-            resultBuilder.AppendLine("  📝 如需了解更多上下文，可基于文件路径和行号进行定向查看");
+            // 精简统计信息
+            resultBuilder.AppendLine($"📊 **统计**: 共{mapping.Statistics.IndexedSnippets:N0}个片段 | {mapping.Statistics.TotalFiles:N0}个文件 | 更新:{mapping.Statistics.LastUpdateTime?.ToString("MM-dd HH:mm") ?? "未知"}");
 
             Console.WriteLine($"[INFO] 搜索完成，返回 {results.Count} 个结果");
             return resultBuilder.ToString();
