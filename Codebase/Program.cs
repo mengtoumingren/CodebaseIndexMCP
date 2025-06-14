@@ -23,7 +23,7 @@ class Program
             // Console.WriteLine($"已索引 {indexedCount} 个C#代码片段");
 
             // 执行搜索
-            var query = "身份认证逻辑";
+            var query = "同步审批状态逻辑";
             Console.WriteLine($"[DEBUG] 开始搜索: {query}");
             var results = await searchSystem.Search(query, limit: 10);
 
