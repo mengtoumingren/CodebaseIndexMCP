@@ -144,17 +144,17 @@ namespace CodebaseMcpServer.Services.Embedding.Providers
             for (int i = 0; i < texts.Count; i++)
             {
                 var text = texts[i];
-                var estimatedTokens = EstimateTokenCount(text);
+                // var estimatedTokens = EstimateTokenCount(text);
 
-                if (estimatedTokens > MAX_TOKEN_LENGTH)
-                {
-                    Console.WriteLine($"[WARNING] 文本 {i} 长度过长 (约{estimatedTokens}个Token)，将被智能截断至 {MAX_TOKEN_LENGTH} Token");
-                    text = TruncateText(text, MAX_TOKEN_LENGTH);
-                }
-                else
-                {
-                    Console.WriteLine($"[DEBUG] 文本 {i} 长度: 约{estimatedTokens}个Token，符合限制");
-                }
+                // if (estimatedTokens > MAX_TOKEN_LENGTH)
+                // {
+                //     Console.WriteLine($"[WARNING] 文本 {i} 长度过长 (约{estimatedTokens}个Token)，将被智能截断至 {MAX_TOKEN_LENGTH} Token");
+                //     text = TruncateText(text, MAX_TOKEN_LENGTH);
+                // }
+                // else
+                // {
+                //     Console.WriteLine($"[DEBUG] 文本 {i} 长度: 约{estimatedTokens}个Token，符合限制");
+                // }
                 processedTexts.Add(text);
             }
 
@@ -184,7 +184,7 @@ namespace CodebaseMcpServer.Services.Embedding.Providers
                     requestUrl,
                     content);
 
-                    
+
 
                 response.EnsureSuccessStatusCode();
                 var jsonResponse = await response.Content.ReadAsStringAsync();
