@@ -5,11 +5,11 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using Codebase.Parsing;
 
 namespace CodeSearch
 {
@@ -266,219 +266,43 @@ namespace CodeSearch
             }
         }
 
-        // 提取成员（方法/构造函数）体的辅助方法
-        private (List<string> codeLines, int endLine) ExtractMemberBody(string[] lines, int startLine)
-        {
-            var memberBody = new List<string>();
-            int j = startLine;
-            int braceCount = 0;
-            bool foundOpenBrace = false;
-            
-            // 首先添加方法签名行
-            memberBody.Add(lines[startLine]);
-            
-            // 检查方法签名行是否包含开括号
-            if (lines[startLine].Contains('{'))
-            {
-                braceCount = lines[startLine].Count(c => c == '{') - lines[startLine].Count(c => c == '}');
-                foundOpenBrace = true;
-            }
-            
-            j = startLine + 1;
-            
-            // 如果方法签名行没有开括号，寻找下一个开括号
-            while (j < lines.Length && !foundOpenBrace)
-            {
-                memberBody.Add(lines[j]);
-                if (lines[j].Contains('{'))
-                {
-                    braceCount = lines[j].Count(c => c == '{') - lines[j].Count(c => c == '}');
-                    foundOpenBrace = true;
-                }
-                j++;
-            }
-            
-            // 提取方法体直到找到匹配的闭括号
-            while (j < lines.Length && braceCount > 0)
-            {
-                int openBraces = lines[j].Count(c => c == '{');
-                int closeBraces = lines[j].Count(c => c == '}');
-                braceCount += openBraces - closeBraces;
-                
-                memberBody.Add(lines[j]);
-                
-                if (braceCount == 0)
-                {
-                    break;
-                }
-                
-                j++;
-            }
-            
-            return (memberBody, j);
-        }
 
-        // 提取简单成员（字段、简单属性等）的辅助方法
-        private (List<string> codeLines, int endLine) ExtractSimpleMember(string[] lines, int startLine)
+        /// <summary>
+        /// 提取代码片段 - 使用多语言解析器框架
+        /// </summary>
+        public List<CodeSnippet> ExtractCodeSnippets(string filePath)
         {
-            var memberLines = new List<string>();
-            int j = startLine;
-            
-            // 添加当前行
-            memberLines.Add(lines[startLine]);
-            
-            // 如果当前行以分号结尾，直接返回
-            if (lines[startLine].TrimEnd().EndsWith(';'))
-            {
-                return (memberLines, startLine);
-            }
-            
-            // 否则继续查找到分号或大括号结束
-            j = startLine + 1;
-            while (j < lines.Length)
-            {
-                memberLines.Add(lines[j]);
-                
-                var trimmedLine = lines[j].TrimEnd();
-                if (trimmedLine.EndsWith(';') || trimmedLine.EndsWith('}'))
-                {
-                    break;
-                }
-                
-                j++;
-            }
-            
-            return (memberLines, j);
-        }
-
-        public List<CodeSnippet> ExtractCSharpSnippets(string filePath)
-        {
-            var snippets = new List<CodeSnippet>();
-            
             try
             {
                 Console.WriteLine($"[DEBUG] 开始解析文件: {filePath}");
-                var content = File.ReadAllText(filePath);
-                Console.WriteLine($"[DEBUG] 文件内容长度: {content.Length} 字符");
                 
-                // 统一换行符处理 - 诊断日志1：验证换行符问题
-                content = content.Replace("\r\n", "\n").Replace("\r", "\n");
-                var lines = content.Split('\n');
-                Console.WriteLine($"[DEBUG] 文件行数: {lines.Length}");
-                
-                // C#类和方法的正则表达式模式 - 全面优化版本
-                var classPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(sealed|abstract|static|partial)\s+)*class\s+(\w+)(?:<[\w\s,<>]*>)?(?:\s*:\s*[\w\s,<>\.]+)?\s*\{?", RegexOptions.IgnoreCase);
-                var methodPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|async)\s+)*(?:([\w<>\[\]?\.]+)\s+)?(\w+)(?:<[\w\s,<>]*>)?\s*\([^)]*\)\s*(?:where\s+[\w\s:<>,]*\s*)?\{?", RegexOptions.IgnoreCase);
-                var constructorPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*(?:base|this)\s*\([^)]*\)\s*)?\{?", RegexOptions.IgnoreCase);
-                var propertyPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|readonly)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:\{\s*(?:get|set)|\s*=\s*)", RegexOptions.IgnoreCase);
-                var fieldPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|readonly|const)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:=|;)", RegexOptions.IgnoreCase);
-                var eventPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract)\s+)*event\s+(?:([\w<>\[\]?\.]+)\s+)?(\w+)\s*(?:\{|\s*;)", RegexOptions.IgnoreCase);
-                
-                string? currentNamespace = null;
-                string? currentClass = null;
-                
-                for (int i = 0; i < lines.Length; i++)
+                // 使用新的解析器工厂
+                var parser = CodeParserFactory.GetParser(filePath);
+                if (parser == null)
                 {
-                    // 检测命名空间 - 优化版本支持文件范围命名空间
-                    var namespaceMatch = Regex.Match(lines[i], @"^\s*namespace\s+([\w.]+)\s*[{;]?");
-                    if (namespaceMatch.Success)
-                    {
-                        currentNamespace = namespaceMatch.Groups[1].Value;
-                        Console.WriteLine($"[DEBUG] 找到命名空间: {currentNamespace} 在第 {i + 1} 行");
-                        currentClass = null;
-                        continue;
-                    }
-                    
-                    // 检测类定义
-                    var classMatch = classPattern.Match(lines[i]);
-                    if (classMatch.Success)
-                    {
-                        currentClass = classMatch.Groups[3].Value; // 更新组索引
-                        Console.WriteLine($"[DEBUG] 找到类: {currentClass} 在第 {i + 1} 行");
-                        continue;
-                    }
-                    
-                    // 检测各种类成员定义
-                    var methodMatch = methodPattern.Match(lines[i]);
-                    var constructorMatch = constructorPattern.Match(lines[i]);
-                    var propertyMatch = propertyPattern.Match(lines[i]);
-                    var fieldMatch = fieldPattern.Match(lines[i]);
-                    var eventMatch = eventPattern.Match(lines[i]);
-                    
-                    string? memberName = null;
-                    string memberType = "";
-                    bool hasBody = false;
-                    
-                    if (methodMatch.Success && currentClass != null)
-                    {
-                        memberName = methodMatch.Groups[4].Value;
-                        memberType = "方法";
-                        hasBody = true;
-                        Console.WriteLine($"[DEBUG] 找到方法: {currentClass}.{memberName} 在第 {i + 1} 行");
-                    }
-                    else if (constructorMatch.Success && currentClass != null &&
-                             constructorMatch.Groups[2].Value == currentClass)
-                    {
-                        memberName = constructorMatch.Groups[2].Value;
-                        memberType = "构造函数";
-                        hasBody = true;
-                        Console.WriteLine($"[DEBUG] 找到构造函数: {currentClass}.{memberName} 在第 {i + 1} 行");
-                    }
-                    else if (propertyMatch.Success && currentClass != null)
-                    {
-                        memberName = propertyMatch.Groups[4].Value;
-                        memberType = "属性";
-                        hasBody = lines[i].Contains('{');
-                        Console.WriteLine($"[DEBUG] 找到属性: {currentClass}.{memberName} 在第 {i + 1} 行");
-                    }
-                    else if (fieldMatch.Success && currentClass != null)
-                    {
-                        memberName = fieldMatch.Groups[4].Value;
-                        memberType = "字段";
-                        hasBody = false;
-                        Console.WriteLine($"[DEBUG] 找到字段: {currentClass}.{memberName} 在第 {i + 1} 行");
-                    }
-                    else if (eventMatch.Success && currentClass != null)
-                    {
-                        memberName = eventMatch.Groups[4].Value;
-                        memberType = "事件";
-                        hasBody = lines[i].Contains('{');
-                        Console.WriteLine($"[DEBUG] 找到事件: {currentClass}.{memberName} 在第 {i + 1} 行");
-                    }
-                    
-                    if (memberName != null && currentClass != null)
-                    {
-                        // 提取成员内容
-                        var memberBody = hasBody ? ExtractMemberBody(lines, i) : ExtractSimpleMember(lines, i);
-                        
-                        // 创建代码片段信息
-                        var snippet = new CodeSnippet
-                        {
-                            FilePath = filePath,
-                            Namespace = currentNamespace,
-                            ClassName = currentClass,
-                            MethodName = $"{memberName} ({memberType})",
-                            Code = string.Join("\n", memberBody.codeLines),
-                            StartLine = i + 1,
-                            EndLine = memberBody.endLine + 1
-                        };
-                        
-                        Console.WriteLine($"[DEBUG] 创建代码片段: {currentNamespace}.{currentClass}.{memberName} ({memberType})");
-                        Console.WriteLine($"[DEBUG] 代码长度: {snippet.Code.Length} 字符, 行范围: {snippet.StartLine}-{snippet.EndLine}");
-                        snippets.Add(snippet);
-                    }
+                    Console.WriteLine($"[WARNING] 不支持的文件类型: {filePath}");
+                    return new List<CodeSnippet>();
                 }
+                
+                var snippets = parser.ParseCodeFile(filePath);
+                
+                Console.WriteLine($"[DEBUG] 文件 {filePath} 解析完成，共提取 {snippets.Count} 个代码片段");
+                return snippets;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DEBUG] 处理文件 {filePath} 失败:");
-                Console.WriteLine($"[DEBUG] 异常类型: {ex.GetType().Name}");
-                Console.WriteLine($"[DEBUG] 异常消息: {ex.Message}");
-                Console.WriteLine($"[DEBUG] 堆栈跟踪: {ex.StackTrace}");
+                Console.WriteLine($"[ERROR] 解析文件失败: {filePath}, 错误: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+                return new List<CodeSnippet>();
             }
-            
-            Console.WriteLine($"[DEBUG] 文件 {filePath} 解析完成，共提取 {snippets.Count} 个代码片段");
-            return snippets;
+        }
+        
+        /// <summary>
+        /// 提取C#代码片段 - 向后兼容方法
+        /// </summary>
+        public List<CodeSnippet> ExtractCSharpSnippets(string filePath)
+        {
+            return ExtractCodeSnippets(filePath);
         }
 
         public async Task<int> ProcessCodebase(string codebasePath, List<string>? filePatterns = null)

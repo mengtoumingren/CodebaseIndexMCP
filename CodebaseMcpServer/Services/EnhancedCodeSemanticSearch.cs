@@ -1,10 +1,10 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options; // Added for IOptions
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Services.Embedding;
+using CodebaseMcpServer.Services.Parsing;
 
 namespace CodebaseMcpServer.Services;
 
@@ -137,183 +137,44 @@ public class EnhancedCodeSemanticSearch : IDisposable
     // Old GetEmbeddings method has been removed.
 
     /// <summary>
-    /// 提取C#代码片段
+    /// 提取代码片段 - 使用多语言解析器框架
     /// </summary>
-    public List<CodeSnippet> ExtractCSharpSnippets(string filePath)
+    public List<CodeSnippet> ExtractCodeSnippets(string filePath)
     {
-        var snippets = new List<CodeSnippet>();
-        
         try
         {
             _logger.LogDebug("开始解析文件: {FilePath}", filePath);
-            var content = File.ReadAllText(filePath);
             
-            content = content.Replace("\r\n", "\n").Replace("\r", "\n");
-            var lines = content.Split('\n');
-            
-            var classPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(sealed|abstract|static|partial)\s+)*class\s+(\w+)(?:<[\w\s,<>]*>)?(?:\s*:\s*[\w\s,<>\.]+)?\s*\{?", RegexOptions.IgnoreCase);
-            var methodPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|async)\s+)*(?:([\w<>\[\]?\.]+)\s+)?(\w+)(?:<[\w\s,<>]*>)?\s*\([^)]*\)\s*(?:where\s+[\w\s:<>,]*\s*)?\{?", RegexOptions.IgnoreCase);
-            var constructorPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*(?:base|this)\s*\([^)]*\)\s*)?\{?", RegexOptions.IgnoreCase);
-            var propertyPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|virtual|override|abstract|readonly)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:\{\s*(?:get|set)|\s*=\s*)", RegexOptions.IgnoreCase);
-            var fieldPattern = new Regex(@"^\s*(?:\[[\w\s,=.()""\/\\\-]*\]\s*)*(?:(public|private|protected|internal)\s+)?(?:(static|readonly|const)\s+)*(?:([\w<>\[\]?\.]+)\s+)(\w+)\s*(?:=|;)", RegexOptions.IgnoreCase);
-            
-            string? currentNamespace = null;
-            string? currentClass = null;
-            
-            for (int i = 0; i < lines.Length; i++)
+            // 使用新的解析器工厂
+            var parser = CodeParserFactory.GetParser(filePath);
+            if (parser == null)
             {
-                // 检测命名空间
-                var namespaceMatch = Regex.Match(lines[i], @"^\s*namespace\s+([\w.]+)\s*[{;]?");
-                if (namespaceMatch.Success)
-                {
-                    currentNamespace = namespaceMatch.Groups[1].Value;
-                    currentClass = null;
-                    continue;
-                }
-                
-                // 检测类定义
-                var classMatch = classPattern.Match(lines[i]);
-                if (classMatch.Success)
-                {
-                    currentClass = classMatch.Groups[3].Value;
-                    continue;
-                }
-                
-                // 检测各种类成员
-                var methodMatch = methodPattern.Match(lines[i]);
-                var constructorMatch = constructorPattern.Match(lines[i]);
-                var propertyMatch = propertyPattern.Match(lines[i]);
-                var fieldMatch = fieldPattern.Match(lines[i]);
-                
-                string? memberName = null;
-                string memberType = "";
-                bool hasBody = false;
-                
-                if (methodMatch.Success && currentClass != null)
-                {
-                    memberName = methodMatch.Groups[4].Value;
-                    memberType = "方法";
-                    hasBody = true;
-                }
-                else if (constructorMatch.Success && currentClass != null &&
-                         constructorMatch.Groups[2].Value == currentClass)
-                {
-                    memberName = constructorMatch.Groups[2].Value;
-                    memberType = "构造函数";
-                    hasBody = true;
-                }
-                else if (propertyMatch.Success && currentClass != null)
-                {
-                    memberName = propertyMatch.Groups[4].Value;
-                    memberType = "属性";
-                    hasBody = lines[i].Contains('{');
-                }
-                else if (fieldMatch.Success && currentClass != null)
-                {
-                    memberName = fieldMatch.Groups[4].Value;
-                    memberType = "字段";
-                    hasBody = false;
-                }
-                
-                if (memberName != null && currentClass != null)
-                {
-                    var memberBody = hasBody ? ExtractMemberBody(lines, i) : ExtractSimpleMember(lines, i);
-                    
-                    var snippet = new CodeSnippet
-                    {
-                        FilePath = filePath,
-                        Namespace = currentNamespace,
-                        ClassName = currentClass,
-                        MethodName = $"{memberName} ({memberType})",
-                        Code = string.Join("\n", memberBody.codeLines),
-                        StartLine = i + 1,
-                        EndLine = memberBody.endLine + 1
-                    };
-                    
-                    snippets.Add(snippet);
-                }
+                _logger.LogWarning("不支持的文件类型: {FilePath}", filePath);
+                return new List<CodeSnippet>();
             }
+            
+            var snippets = parser.ParseCodeFile(filePath);
+            
+            _logger.LogDebug("文件 {FilePath} 解析完成，语言: {Language}，提取 {Count} 个代码片段",
+                filePath, parser.Language, snippets.Count);
+            
+            return snippets;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "处理文件失败: {FilePath}", filePath);
+            _logger.LogError(ex, "解析文件失败: {FilePath}", filePath);
+            return new List<CodeSnippet>();
         }
-        
-        _logger.LogDebug("文件 {FilePath} 解析完成，提取 {Count} 个代码片段", filePath, snippets.Count);
-        return snippets;
+    }
+    
+    /// <summary>
+    /// 提取C#代码片段 - 向后兼容方法
+    /// </summary>
+    public List<CodeSnippet> ExtractCSharpSnippets(string filePath)
+    {
+        return ExtractCodeSnippets(filePath);
     }
 
-    private (List<string> codeLines, int endLine) ExtractMemberBody(string[] lines, int startLine)
-    {
-        var memberBody = new List<string>();
-        int j = startLine;
-        int braceCount = 0;
-        bool foundOpenBrace = false;
-        
-        memberBody.Add(lines[startLine]);
-        
-        if (lines[startLine].Contains('{'))
-        {
-            braceCount = lines[startLine].Count(c => c == '{') - lines[startLine].Count(c => c == '}');
-            foundOpenBrace = true;
-        }
-        
-        j = startLine + 1;
-        
-        while (j < lines.Length && !foundOpenBrace)
-        {
-            memberBody.Add(lines[j]);
-            if (lines[j].Contains('{'))
-            {
-                braceCount = lines[j].Count(c => c == '{') - lines[j].Count(c => c == '}');
-                foundOpenBrace = true;
-            }
-            j++;
-        }
-        
-        while (j < lines.Length && braceCount > 0)
-        {
-            int openBraces = lines[j].Count(c => c == '{');
-            int closeBraces = lines[j].Count(c => c == '}');
-            braceCount += openBraces - closeBraces;
-            
-            memberBody.Add(lines[j]);
-            
-            if (braceCount == 0)
-                break;
-                
-            j++;
-        }
-        
-        return (memberBody, j);
-    }
-
-    private (List<string> codeLines, int endLine) ExtractSimpleMember(string[] lines, int startLine)
-    {
-        var memberLines = new List<string>();
-        int j = startLine;
-        
-        memberLines.Add(lines[startLine]);
-        
-        if (lines[startLine].TrimEnd().EndsWith(';'))
-        {
-            return (memberLines, startLine);
-        }
-        
-        j = startLine + 1;
-        while (j < lines.Length)
-        {
-            memberLines.Add(lines[j]);
-            
-            var trimmedLine = lines[j].TrimEnd();
-            if (trimmedLine.EndsWith(';') || trimmedLine.EndsWith('}'))
-                break;
-                
-            j++;
-        }
-        
-        return (memberLines, j);
-    }
 
     /// <summary>
     /// 处理代码库并建立索引
@@ -334,7 +195,7 @@ public class EnhancedCodeSemanticSearch : IDisposable
         {
             foreach (var filePath in Directory.GetFiles(codebasePath, pattern, SearchOption.AllDirectories))
             {
-                var snippets = ExtractCSharpSnippets(filePath);
+                var snippets = ExtractCodeSnippets(filePath);
                 allSnippets.AddRange(snippets);
             }
         }
