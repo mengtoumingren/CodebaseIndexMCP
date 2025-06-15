@@ -380,10 +380,10 @@ public class FileWatcherService : BackgroundService
                     break;
 
                 case FileChangeType.Deleted:
-                    // TODO: 实现删除文件的索引清理功能
-                    _logger.LogInformation("文件已删除，需要清理索引: {Path}", change.FilePath);
-                    return true; // 暂时返回成功
-
+                	_logger.LogInformation("文件已删除，开始清理索引: {Path}", change.FilePath);
+                                var taskManagerForDelete = GetTaskManager();
+                	return await taskManagerForDelete.HandleFileDeletionAsync(change.FilePath, change.CollectionName);
+            
                 case FileChangeType.Renamed:
                     // 重命名通过删除+创建两个事件处理
                     break;

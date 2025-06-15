@@ -838,6 +838,26 @@ public class IndexingTaskManager
             _logger.LogError(ex, "移除 FileIndexDetails 失败: {FilePath}", filePath);
         }
     }
+/// <summary>
+    /// 处理文件删除事件，清理Qdrant索引和元数据
+    /// </summary>
+    public async Task<bool> HandleFileDeletionAsync(string filePath, string collectionName)
+    {
+        _logger.LogInformation("处理文件删除事件: {FilePath} from collection {CollectionName}", filePath, collectionName);
+        bool qdrantDeleteSuccess = await _searchService.DeleteFileIndexAsync(filePath, collectionName);
+        if (!qdrantDeleteSuccess)
+        {
+            _logger.LogWarning("从 Qdrant 删除文件索引失败: {FilePath}", filePath);
+            // 根据策略，这里可以选择是否继续清理元数据，或者直接返回false以指示部分失败
+        }
+
+        // 尝试清理元数据，即使Qdrant删除可能失败，以避免孤立的元数据记录
+        // 如果需要更严格的事务性，可以仅在qdrantDeleteSuccess为true时执行此操作
+        await RemoveFileIndexDetailsAsync(filePath, collectionName); 
+        
+        _logger.LogInformation("文件删除事件处理完成: {FilePath}, Qdrant删除状态: {Status}", filePath, qdrantDeleteSuccess);
+        return qdrantDeleteSuccess; // 主要返回Qdrant操作的状态，元数据清理失败会记录日志
+    }
 
     /// <summary>
     /// 获取索引统计信息

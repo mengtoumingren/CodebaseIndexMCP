@@ -404,6 +404,10 @@ public class EnhancedCodeSemanticSearch : IDisposable
             _logger.LogDebug("开始删除文件索引: {FilePath} from {CollectionName}", filePath, collectionName);
             
             // 使用 Delete 方法按条件删除点
+            // 对文件路径中的反斜杠进行转义，以确保在Qdrant中正确匹配
+            string escapedFilePath = filePath.Replace("\\", "\\\\");
+            _logger.LogDebug("Escaped file path for Qdrant filter: {EscapedFilePath}", escapedFilePath);
+
             var deleteResult = await _client.DeleteAsync(collectionName, new Filter
             {
                 Must = {
@@ -412,7 +416,7 @@ public class EnhancedCodeSemanticSearch : IDisposable
                         Field = new FieldCondition
                         {
                             Key = "filePath",
-                            Match = new Qdrant.Client.Grpc.Match { Text = filePath }
+                            Match = new Qdrant.Client.Grpc.Match { Text = escapedFilePath }
                         }
                     }
                 }
