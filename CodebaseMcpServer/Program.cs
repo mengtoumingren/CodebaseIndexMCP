@@ -37,6 +37,7 @@ builder.Services.AddSingleton<EnhancedCodeSemanticSearch>();
 
 // 注册核心服务（移除循环依赖）
 builder.Services.AddSingleton<IndexingTaskManager>();
+builder.Services.AddSingleton<FileChangePersistenceService>();
 builder.Services.AddSingleton<FileWatcherService>();
 builder.Services.AddHostedService<FileWatcherService>(provider => provider.GetRequiredService<FileWatcherService>());
 

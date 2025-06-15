@@ -43,24 +43,24 @@ public class IndexingResult
     public string? CollectionName { get; set; }
 }
 
-/// <summary>
-/// 文件变更事件
-/// </summary>
-public class FileChangeEvent
-{
-    public string FilePath { get; set; } = string.Empty;
-    public FileChangeType ChangeType { get; set; }
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
-    public string CollectionName { get; set; } = string.Empty;
-}
+// /// <summary>
+// /// 文件变更事件
+// /// </summary>
+// public class FileChangeEvent
+// {
+//     public string FilePath { get; set; } = string.Empty;
+//     public FileChangeType ChangeType { get; set; }
+//     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+//     public string CollectionName { get; set; } = string.Empty;
+// }
 
-/// <summary>
-/// 文件变更类型
-/// </summary>
-public enum FileChangeType
-{
-    Created,
-    Modified,
-    Deleted,
-    Renamed
-}
+// /// <summary>
+// /// 文件变更类型
+// /// </summary>
+// public enum FileChangeType
+// {
+//     Created,
+//     Modified,
+//     Deleted,
+//     Renamed
+// }
