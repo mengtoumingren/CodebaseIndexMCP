@@ -429,6 +429,25 @@ public class EnhancedCodeSemanticSearch : IDisposable
     }
 
     /// <summary>
+    /// 删除整个集合
+    /// </summary>
+    public async Task<bool> DeleteCollectionAsync(string collectionName)
+    {
+        try
+        {
+            _logger.LogInformation("开始删除 Qdrant 集合: {CollectionName}", collectionName);
+            await _client.DeleteCollectionAsync(collectionName);
+            _logger.LogInformation("成功删除 Qdrant 集合: {CollectionName}", collectionName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "删除 Qdrant 集合失败: {CollectionName}", collectionName);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 释放资源
     /// </summary>
     public void Dispose()

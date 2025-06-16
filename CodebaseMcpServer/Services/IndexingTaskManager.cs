@@ -921,4 +921,246 @@ public class IndexingTaskManager
             Message = isConnected ? "连接正常" : "连接失败"
         };
     }
+
+    /// <summary>
+    /// 删除索引库 - 安全确认模式
+    /// </summary>
+    public async Task<(bool Success, string Message)> DeleteIndexLibraryAsync(
+        string codebasePath,
+        bool confirm = false)
+    {
+        try
+        {
+            // 1. 验证和获取映射
+            var normalizedPath = Path.GetFullPath(codebasePath);
+            var mapping = _configManager.GetMappingByPath(normalizedPath);
+            
+            if (mapping == null)
+            {
+                return (false, $"❌ 代码库索引不存在: {normalizedPath}");
+            }
+
+            // 2. 如果未确认，显示详细信息
+            if (!confirm)
+            {
+                return (false, GenerateConfirmationMessage(mapping));
+            }
+
+            // 3. 执行删除流程
+            var result = await ExecuteDeleteProcess(mapping);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "删除索引库时发生错误: {CodebasePath}", codebasePath);
+            return (false, $"❌ 删除过程中发生错误: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 生成删除确认信息
+    /// </summary>
+    private string GenerateConfirmationMessage(CodebaseMapping mapping)
+    {
+        var confirmationMessage = $"🗑️ 即将删除索引库\n\n" +
+                                 $"📁 代码库路径: {mapping.CodebasePath}\n" +
+                                 $"🏷️ 友好名称: {mapping.FriendlyName}\n" +
+                                 $"📊 集合名称: {mapping.CollectionName}\n" +
+                                 $"📦 代码片段数: {mapping.Statistics.IndexedSnippets:N0}个\n" +
+                                 $"📄 文件数: {mapping.Statistics.TotalFiles:N0}个\n" +
+                                 $"📅 创建时间: {mapping.CreatedAt:yyyy-MM-dd HH:mm:ss}\n";
+
+        if (mapping.Statistics.LastUpdateTime.HasValue)
+        {
+            confirmationMessage += $"📅 最后更新: {mapping.Statistics.LastUpdateTime:yyyy-MM-dd HH:mm:ss}\n";
+        }
+
+        confirmationMessage += $"👁️ 监控状态: {(mapping.IsMonitoring ? "启用" : "禁用")}\n" +
+                              $"🔄 索引状态: {mapping.IndexingStatus}\n\n" +
+                              $"⚠️ 警告: 此操作不可逆！删除后需要重新创建索引才能搜索此代码库。\n\n" +
+                              $"✅ 将执行以下操作:\n" +
+                              $"  1. 停止文件监控服务\n" +
+                              $"  2. 删除 Qdrant 集合及所有向量数据\n" +
+                              $"  3. 清理任务持久化记录\n" +
+                              $"  4. 移除本地配置映射\n\n" +
+                              $"💡 如需确认删除，请设置 confirm=true 参数";
+
+        return confirmationMessage;
+    }
+
+    /// <summary>
+    /// 执行删除流程
+    /// </summary>
+    private async Task<(bool Success, string Message)> ExecuteDeleteProcess(CodebaseMapping mapping)
+    {
+        var steps = new List<string>();
+        var hasErrors = false;
+        
+        try
+        {
+            _logger.LogInformation("开始执行索引库删除流程: {FriendlyName} ({CollectionName})",
+                mapping.FriendlyName, mapping.CollectionName);
+
+            // 1. 停止运行中的任务
+            try
+            {
+                await StopRunningTasks(mapping.CodebasePath);
+                steps.Add("✅ 停止运行中的索引任务");
+            }
+            catch (Exception ex)
+            {
+                steps.Add($"⚠️ 停止索引任务时发生警告: {ex.Message}");
+                hasErrors = true;
+            }
+
+            // 2. 停止文件监控
+            try
+            {
+                var fileWatcherService = GetFileWatcherService();
+                var stopResult = fileWatcherService.StopWatcher(mapping.Id);
+                if (stopResult)
+                {
+                    steps.Add("✅ 停止文件监控服务");
+                }
+                else
+                {
+                    steps.Add("⚠️ 文件监控服务停止失败（可能未启动）");
+                    hasErrors = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                steps.Add($"⚠️ 停止文件监控时发生错误: {ex.Message}");
+                hasErrors = true;
+            }
+
+            // 3. 删除 Qdrant 集合
+            try
+            {
+                var deleteSuccess = await _searchService.DeleteCollectionAsync(mapping.CollectionName);
+                if (deleteSuccess)
+                {
+                    steps.Add("✅ 删除 Qdrant 集合数据");
+                }
+                else
+                {
+                    steps.Add("⚠️ Qdrant 集合删除失败（可能已不存在）");
+                    hasErrors = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                steps.Add($"❌ 删除 Qdrant 集合时发生错误: {ex.Message}");
+                hasErrors = true;
+            }
+
+            // 4. 清理任务持久化记录
+            try
+            {
+                await CleanupTaskRecords(mapping.CodebasePath);
+                steps.Add("✅ 清理任务持久化记录");
+            }
+            catch (Exception ex)
+            {
+                steps.Add($"⚠️ 清理任务记录时发生警告: {ex.Message}");
+                hasErrors = true;
+            }
+
+            // 5. 删除配置映射
+            try
+            {
+                var configDeleteSuccess = await _configManager.RemoveMappingByPath(mapping.CodebasePath);
+                if (configDeleteSuccess)
+                {
+                    steps.Add("✅ 移除配置映射");
+                }
+                else
+                {
+                    steps.Add("❌ 移除配置映射失败");
+                    hasErrors = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                steps.Add($"❌ 移除配置映射时发生错误: {ex.Message}");
+                hasErrors = true;
+            }
+
+            var statusIcon = hasErrors ? "⚠️" : "🗑️";
+            var statusText = hasErrors ? "索引库删除部分完成" : "索引库删除完成";
+            
+            var message = $"{statusIcon} {statusText}\n\n" +
+                         $"📁 代码库: {mapping.FriendlyName}\n" +
+                         $"📊 集合: {mapping.CollectionName}\n\n" +
+                         $"执行步骤:\n{string.Join("\n", steps)}";
+
+            return (!hasErrors, message);
+        }
+        catch (Exception ex)
+        {
+            steps.Add($"❌ 删除过程中发生严重错误: {ex.Message}");
+            var message = $"❌ 索引库删除失败\n\n执行步骤:\n{string.Join("\n", steps)}";
+            return (false, message);
+        }
+    }
+
+    /// <summary>
+    /// 停止指定代码库的运行中任务
+    /// </summary>
+    private async Task StopRunningTasks(string codebasePath)
+    {
+        var normalizedPath = codebasePath.NormalizePath();
+        
+        if (_runningTasks.TryGetValue(normalizedPath, out var runningTask))
+        {
+            _logger.LogInformation("发现运行中的任务，正在停止: {TaskId}", runningTask.Id);
+            await CancelTaskAsync(runningTask.Id);
+            
+            // 等待任务完全停止
+            var maxWait = TimeSpan.FromSeconds(10);
+            var waited = TimeSpan.Zero;
+            while (_runningTasks.ContainsKey(normalizedPath) && waited < maxWait)
+            {
+                await Task.Delay(500);
+                waited = waited.Add(TimeSpan.FromMilliseconds(500));
+            }
+            
+            if (_runningTasks.ContainsKey(normalizedPath))
+            {
+                _logger.LogWarning("任务停止超时，强制移除: {TaskId}", runningTask.Id);
+                _runningTasks.TryRemove(normalizedPath, out _);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 清理指定代码库的任务持久化记录
+    /// </summary>
+    private async Task CleanupTaskRecords(string codebasePath)
+    {
+        try
+        {
+            // 获取与此代码库相关的所有任务记录
+            var allTasks = await _persistenceService.LoadPendingTasksAsync();
+            var tasksToCleanup = allTasks
+                .Where(t => Path.GetFullPath(t.CodebasePath).Equals(Path.GetFullPath(codebasePath), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var task in tasksToCleanup)
+            {
+                await _persistenceService.CleanupTaskAsync(task.Id);
+                _logger.LogDebug("清理任务记录: {TaskId}", task.Id);
+            }
+
+            if (tasksToCleanup.Any())
+            {
+                _logger.LogInformation("清理了 {Count} 个相关任务记录", tasksToCleanup.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "清理任务记录时发生错误: {CodebasePath}", codebasePath);
+            throw;
+        }
+    }
 }

@@ -215,7 +215,7 @@ public class IndexConfigManager
             _config.LastUpdated = DateTime.UtcNow;
             await SaveConfigurationInternal(_config);
             
-            _logger.LogInformation("删除代码库映射: {Path} -> {Collection}", 
+            _logger.LogInformation("删除代码库映射: {Path} -> {Collection}",
                 mapping.CodebasePath, mapping.CollectionName);
             
             return true;
@@ -224,6 +224,21 @@ public class IndexConfigManager
         {
             _fileLock.Release();
         }
+    }
+
+    /// <summary>
+    /// 根据路径删除映射
+    /// </summary>
+    public async Task<bool> RemoveMappingByPath(string codebasePath)
+    {
+        var normalizedPath = codebasePath.NormalizePath();
+        var mapping = GetMappingByPath(normalizedPath);
+        if (mapping == null)
+        {
+            _logger.LogWarning("要删除的映射不存在: {Path}", normalizedPath);
+            return false;
+        }
+        return await RemoveMapping(mapping.Id);
     }
 
     /// <summary>

@@ -374,4 +374,81 @@ public sealed class IndexManagementTools
             return $"❌ 重建索引时发生错误: {ex.Message}";
         }
     }
+
+    /// <summary>
+    /// 删除索引库工具 - 安全确认模式
+    /// </summary>
+    /// <param name="codebasePath">要删除索引的代码库路径</param>
+    /// <param name="confirm">确认删除标志，设为true表示确认执行删除操作</param>
+    /// <returns>删除结果</returns>
+    [McpServerTool, Description("删除代码库索引，完全移除指定代码库的索引数据和配置。删除前会显示详细信息供确认。")]
+    public static async Task<string> DeleteIndexLibrary(
+        [Description("要删除索引的代码库路径")] string codebasePath,
+        [Description("确认删除标志，设为true表示确认执行删除操作")] bool confirm = false)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] 开始执行删除索引库，代码库路径: '{codebasePath}', 确认标志: {confirm}");
+            
+            if (_taskManager == null || _configManager == null)
+            {
+                return "❌ 服务未初始化，请重启MCP服务器";
+            }
+
+            // 验证路径
+            if (string.IsNullOrWhiteSpace(codebasePath))
+            {
+                return "❌ 请提供有效的代码库路径";
+            }
+
+            string normalizedPath;
+            try
+            {
+                normalizedPath = Path.GetFullPath(codebasePath);
+            }
+            catch (Exception ex)
+            {
+                return $"❌ 无效的路径格式: {ex.Message}";
+            }
+
+            // 执行删除
+            var result = await _taskManager.DeleteIndexLibraryAsync(normalizedPath, confirm);
+            
+            if (result.Success || !confirm)
+            {
+                // 成功删除或显示确认信息
+                Console.WriteLine($"[INFO] 删除索引库操作完成，成功: {result.Success}");
+                return result.Message;
+            }
+            else
+            {
+                Console.WriteLine($"[ERROR] 删除索引库失败: {result.Message}");
+                return result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] 删除索引库时发生错误: {ex.Message}");
+            Console.WriteLine($"[ERROR] 异常类型: {ex.GetType().Name}");
+            Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+            
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"[ERROR] 内部异常: {ex.InnerException.GetType().Name}");
+                Console.WriteLine($"[ERROR] 内部异常消息: {ex.InnerException.Message}");
+            }
+            
+            return $"❌ 删除索引库时发生错误: {ex.Message}\n\n" +
+                   $"🔧 请检查:\n" +
+                   $"1. 代码库路径是否正确: {codebasePath}\n" +
+                   $"2. Qdrant 服务是否正常运行\n" +
+                   $"3. 配置文件访问权限是否正常\n" +
+                   $"4. 任务持久化目录是否可写\n\n" +
+                   $"🛠️ 故障排除:\n" +
+                   $"💡 使用 GetIndexingStatus 工具查看索引库状态\n" +
+                   $"🔍 检查服务器日志获取详细错误信息\n" +
+                   $"🔄 如果部分删除成功，可能需要手动清理残留数据\n\n" +
+                   $"⚡ 提示: DeleteIndexLibrary 提供安全的索引库完整删除功能";
+        }
+    }
 }
