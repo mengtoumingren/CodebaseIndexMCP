@@ -123,6 +123,16 @@ namespace CodebaseMcpServer.Services.Embedding
                         throw new InvalidOperationException("IHttpClientFactory not available for HuggingFaceEmbeddingProvider.");
                     }
                     return new Providers.HuggingFaceEmbeddingProvider(providerSettings, hfHttpClientFactory, hfLogger!);
+
+                case EmbeddingProviderType.Ollama:
+                    var ollamaHttpClientFactory = _serviceProvider.GetService<IHttpClientFactory>();
+                    var ollamaLogger = _serviceProvider.GetService<ILogger<Providers.OllamaEmbeddingProvider>>();
+                    if (ollamaHttpClientFactory == null)
+                    {
+                        _logger.LogError("IHttpClientFactory not resolved from service provider. Cannot create OllamaEmbeddingProvider.");
+                        throw new InvalidOperationException("IHttpClientFactory not available for OllamaEmbeddingProvider.");
+                    }
+                    return new Providers.OllamaEmbeddingProvider(providerSettings, ollamaHttpClientFactory, ollamaLogger!);
                     
                 // Add cases for other providers here as they are implemented.
 

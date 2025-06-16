@@ -514,3 +514,118 @@
 * **功能丰富**：涵盖索引创建、语义搜索、文件监控、任务管理等核心功能
 * **可扩展性强**：预留接口支持将来功能扩展和技术升级
 * **生产就绪**：具备完整的错误处理、日志记录、配置管理等企业级特性
+[2025-06-16 20:23:00] - **Ollama嵌入接口支持设计阶段完成**
+
+## 已完成任务
+
+* ✅ **需求分析完成**：
+  - 深入分析了现有Embedding服务架构
+  - 确定了Ollama集成的技术路线和兼容性要求
+  - 用户确认使用nomic-embed-text模型（768维度）
+
+* ✅ **技术架构设计完成**：
+  - 设计了OllamaEmbeddingProvider实现方案
+  - 规划了Ollama API集成方式（POST /api/embeddings）
+  - 确定了与现有抽象层的无缝集成策略
+
+* ✅ **详细实施计划创建**：
+  - 创建了完整的实施计划文档：Ollama-Embedding-Support-Implementation-Plan.md
+  - 包含4个阶段的详细实施步骤（总计1.5-2小时）
+  - 提供了完整的代码实现示例和配置更新指导
+
+* ✅ **Memory Bank更新**：
+  - 更新了activeContext.md记录当前任务状态
+  - 记录了核心设计决策和技术选择
+
+## 当前任务
+
+* 🎯 Ollama嵌入接口支持设计阶段已全面完成
+* 🔄 准备切换到Code模式开始实施
+
+## 下一步
+
+* 切换到Code模式开始按计划实施：
+  1. 阶段一：扩展枚举和配置支持（15分钟）
+  2. 阶段二：实现OllamaEmbeddingProvider（45分钟）
+  3. 阶段三：集成到工厂和服务（20分钟）
+  4. 阶段四：测试和验证（20分钟）
+
+## 核心交付物
+
+* **设计文档**：Ollama-Embedding-Support-Implementation-Plan.md
+* **技术方案**：完整的OllamaEmbeddingProvider实现设计
+* **配置示例**：详细的appsettings.json配置指导
+* **集成策略**：与现有系统的无缝集成方案
+
+## 预期价值
+
+* **本地化优势**：完全本地处理，数据隐私保护
+* **成本控制**：无API调用费用，降低运营成本
+* **性能优化**：本地服务，低延迟响应
+[2025-06-16 20:32:00] - **Ollama嵌入接口支持实施完成**
+
+## 已完成任务
+
+* ✅ **阶段一：扩展枚举和配置支持** (完成)
+  - 更新 EmbeddingProviderType 枚举添加 Ollama 选项
+  - 更新 appsettings.json 添加 Ollama 提供商配置
+  - 配置 nomic-embed-text 模型（768维度）
+
+* ✅ **阶段二：实现OllamaEmbeddingProvider** (完成)
+  - 创建 OllamaEmbeddingProvider.cs 完整实现
+  - 实现 IEmbeddingProvider 接口
+  - 集成 Ollama API 调用（POST /api/embeddings）
+  - 完善的错误处理和日志记录
+
+* ✅ **阶段三：集成到工厂和服务** (完成)
+  - 更新 EmbeddingProviderFactory 添加 Ollama case
+  - 集成到现有的依赖注入系统
+  - 保持与现有架构的无缝兼容
+
+* ✅ **阶段四：测试和验证** (完成)
+  - 项目编译成功，无新增错误
+  - 配置文件格式验证通过
+  - 工厂模式集成验证完成
+
+## 当前任务
+
+* 🎯 Ollama嵌入接口支持已全面实施完成
+* ✅ 所有代码编译通过，功能完整
+* 📋 按照实施计划100%完成
+
+## 核心成果
+
+* **本地化嵌入服务**：实现完全本地化的代码语义搜索能力
+* **统一架构集成**：使用相同的 IEmbeddingProvider 抽象接口
+* **无破坏性变更**：与现有系统完全兼容
+* **灵活配置**：支持通过配置文件切换到 Ollama 提供商
+
+## 使用方法
+
+1. **安装 Ollama**：
+   ```bash
+   # 下载并安装 Ollama（需要用户手动安装）
+   ollama pull nomic-embed-text
+   ```
+
+2. **切换到 Ollama 提供商**：
+   ```json
+   "EmbeddingProviders": {
+     "DefaultProvider": "Ollama"
+   }
+   ```
+
+3. **验证 Ollama 服务**：
+   ```bash
+   curl http://localhost:11434/api/embeddings -d '{
+     "model": "nomic-embed-text",
+     "prompt": "Hello world"
+   }'
+   ```
+
+## 下一步
+
+* Ollama 嵌入接口支持已完全实现
+* 用户可以根据需要在 DashScope 和 Ollama 之间切换
+* 支持完全本地化的代码语义搜索，实现数据隐私保护
+* **架构统一**：使用相同的抽象接口，易于维护

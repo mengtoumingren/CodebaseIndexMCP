@@ -25,6 +25,11 @@ namespace CodebaseMcpServer.Models
         /// </summary>
         HuggingFace,
 
+        /// <summary>
+        /// Ollama本地嵌入服务
+        /// </summary>
+        Ollama
+
         // Add more providers here as needed in the future.
         // Example:
         // /// <summary>
