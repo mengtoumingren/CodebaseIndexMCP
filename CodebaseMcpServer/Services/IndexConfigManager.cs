@@ -150,8 +150,87 @@ public class IndexConfigManager
     public CodebaseMapping? GetMappingByPath(string path)
     {
         var normalizedPath = path.NormalizePath();
-        return _config.CodebaseMappings.FirstOrDefault(m => 
+        return _config.CodebaseMappings.FirstOrDefault(m =>
             m.NormalizedPath.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// 查找路径对应的映射，支持父目录回退查找
+    /// </summary>
+    /// <param name="path">查询路径</param>
+    /// <returns>找到的映射信息，如果是父目录映射会在日志中标注</returns>
+    public CodebaseMapping? GetMappingByPathWithParentFallback(string path)
+    {
+        var normalizedPath = path.NormalizePath();
+        
+        // 首先尝试直接匹配
+        var directMapping = GetMappingByPath(normalizedPath);
+        if (directMapping != null)
+        {
+            _logger.LogDebug("找到直接路径映射: {QueryPath} -> {CollectionName}",
+                normalizedPath, directMapping.CollectionName);
+            return directMapping;
+        }
+        
+        _logger.LogDebug("未找到直接路径映射，开始向上查找父目录: {QueryPath}", normalizedPath);
+        
+        // 如果没有直接匹配，向上查找父目录
+        var currentPath = normalizedPath;
+        int searchDepth = 0;
+        const int maxSearchDepth = 10; // 防止无限循环
+        
+        while (!string.IsNullOrEmpty(currentPath) && searchDepth < maxSearchDepth)
+        {
+            var parentPath = Path.GetDirectoryName(currentPath);
+            if (string.IsNullOrEmpty(parentPath) || parentPath == currentPath)
+            {
+                _logger.LogDebug("已到达根目录，停止查找");
+                break;
+            }
+            
+            searchDepth++;
+            var normalizedParentPath = parentPath.NormalizePath();
+            
+            _logger.LogDebug("检查父目录 {Depth}: {ParentPath}", searchDepth, normalizedParentPath);
+            
+            var parentMapping = GetMappingByPath(normalizedParentPath);
+            if (parentMapping != null)
+            {
+                _logger.LogInformation("找到父目录映射: 查询路径 {QueryPath} -> 父索引库 {ParentPath} (集合: {CollectionName})",
+                    normalizedPath, parentMapping.CodebasePath, parentMapping.CollectionName);
+                return parentMapping;
+            }
+            
+            currentPath = parentPath;
+        }
+        
+        if (searchDepth >= maxSearchDepth)
+        {
+            _logger.LogWarning("父目录查找达到最大深度限制 {MaxDepth}，停止查找", maxSearchDepth);
+        }
+        
+        _logger.LogDebug("未找到任何父目录映射: {QueryPath}", normalizedPath);
+        return null;
+    }
+
+    /// <summary>
+    /// 检查指定路径是否为某个已索引路径的子目录
+    /// </summary>
+    /// <param name="queryPath">查询路径</param>
+    /// <param name="indexedPath">已索引路径</param>
+    /// <returns>如果是子目录返回true</returns>
+    public bool IsSubDirectoryOfIndexed(string queryPath, string indexedPath)
+    {
+        var normalizedQuery = queryPath.NormalizePath();
+        var normalizedIndexed = indexedPath.NormalizePath();
+        
+        // 确保索引路径以路径分隔符结尾，避免误匹配
+        if (!normalizedIndexed.EndsWith(Path.DirectorySeparatorChar.ToString()))
+        {
+            normalizedIndexed += Path.DirectorySeparatorChar;
+        }
+        
+        return normalizedQuery.StartsWith(normalizedIndexed, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

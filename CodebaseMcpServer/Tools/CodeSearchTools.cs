@@ -68,8 +68,8 @@ public sealed class CodeSearchTools
                 return $"❌ 无效的路径格式: {ex.Message}";
             }
 
-            // 从配置中获取对应的集合名称
-            var mapping = _configManager.GetMappingByPath(normalizedPath);
+            // 从配置中获取对应的集合名称（支持父目录回退）
+            var mapping = _configManager.GetMappingByPathWithParentFallback(normalizedPath);
             if (mapping == null)
             {
                 return $"📋 代码库未建立索引\n" +
@@ -81,8 +81,12 @@ public sealed class CodeSearchTools
                        $"   - codebasePath: {normalizedPath}\n" +
                        $"   - friendlyName: {Path.GetFileName(normalizedPath)} (可选)\n" +
                        $"\n" +
-                       $"💡 创建完成后，重新执行此搜索即可获得结果";
+                       $"💡 创建完成后，重新执行此搜索即可获得结果\n" +
+                       $"📝 注意：已检查父目录，未找到可用的索引库";
             }
+
+            // 检查是否使用了父目录索引
+            bool isUsingParentIndex = !mapping.NormalizedPath.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase);
 
             // 检查索引状态
             if (mapping.IndexingStatus != "completed")
@@ -94,6 +98,12 @@ public sealed class CodeSearchTools
             }
 
             Console.WriteLine($"[INFO] 找到映射: {mapping.FriendlyName} -> {mapping.CollectionName}");
+            
+            // 记录是否使用了父目录索引
+            if (isUsingParentIndex)
+            {
+                Console.WriteLine($"[INFO] 使用父目录索引: 查询路径 '{normalizedPath}' -> 索引库 '{mapping.CodebasePath}'");
+            }
             
             // 执行搜索
             var results = await _searchService.SearchAsync(query, mapping.CollectionName, limit);
@@ -115,7 +125,17 @@ public sealed class CodeSearchTools
 
             // 格式化搜索结果 - 精简版
             var resultBuilder = new StringBuilder();
-            resultBuilder.AppendLine($"🎯 查询: '{query}' | 📁 {mapping.FriendlyName} | ✅ {results.Count}个结果");
+            
+            if (isUsingParentIndex)
+            {
+                resultBuilder.AppendLine($"🎯 查询: '{query}' | 📁 {mapping.FriendlyName} (父目录索引) | ✅ {results.Count}个结果");
+                resultBuilder.AppendLine($"💡 使用父目录索引: {mapping.CodebasePath}");
+                resultBuilder.AppendLine($"📍 查询路径: {normalizedPath}");
+            }
+            else
+            {
+                resultBuilder.AppendLine($"🎯 查询: '{query}' | 📁 {mapping.FriendlyName} | ✅ {results.Count}个结果");
+            }
             resultBuilder.AppendLine();
 
             for (int i = 0; i < results.Count; i++)

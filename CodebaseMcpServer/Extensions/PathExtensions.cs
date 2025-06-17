@@ -77,11 +77,54 @@ public static class PathExtensions
     public static string GetRelativePath(this string fullPath, string basePath)
     {
         var fullUri = new Uri(fullPath);
-        var baseUri = new Uri(basePath.EndsWith(Path.DirectorySeparatorChar.ToString()) 
-            ? basePath 
+        var baseUri = new Uri(basePath.EndsWith(Path.DirectorySeparatorChar.ToString())
+            ? basePath
             : basePath + Path.DirectorySeparatorChar);
             
         return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString())
             .Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>
+    /// 检查路径是否为另一个路径的子目录
+    /// </summary>
+    /// <param name="childPath">子路径</param>
+    /// <param name="parentPath">父路径</param>
+    /// <returns>如果是子目录返回true</returns>
+    public static bool IsSubDirectoryOf(this string childPath, string parentPath)
+    {
+        var normalizedChild = childPath.NormalizePath();
+        var normalizedParent = parentPath.NormalizePath();
+        
+        // 确保父路径以路径分隔符结尾
+        if (!normalizedParent.EndsWith(Path.DirectorySeparatorChar.ToString()))
+        {
+            normalizedParent += Path.DirectorySeparatorChar;
+        }
+        
+        return normalizedChild.StartsWith(normalizedParent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 获取两个路径之间的层级差距
+    /// </summary>
+    /// <param name="childPath">子路径</param>
+    /// <param name="parentPath">父路径</param>
+    /// <returns>层级数，如果不是子目录返回-1</returns>
+    public static int GetDirectoryDepth(this string childPath, string parentPath)
+    {
+        if (!childPath.IsSubDirectoryOf(parentPath))
+            return -1;
+            
+        var normalizedChild = childPath.NormalizePath();
+        var normalizedParent = parentPath.NormalizePath();
+        
+        if (!normalizedParent.EndsWith(Path.DirectorySeparatorChar.ToString()))
+        {
+            normalizedParent += Path.DirectorySeparatorChar;
+        }
+        
+        var relativePath = normalizedChild.Substring(normalizedParent.Length);
+        return relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Length;
     }
 }
