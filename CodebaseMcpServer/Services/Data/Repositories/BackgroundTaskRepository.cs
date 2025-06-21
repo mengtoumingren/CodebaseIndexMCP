@@ -20,10 +20,10 @@ public class BackgroundTaskRepository : IBackgroundTaskRepository
     public async Task<BackgroundTask> CreateAsync(BackgroundTask task)
     {
         var sql = @"
-            INSERT INTO BackgroundTasks 
-            (TaskId, Type, LibraryId, Status, Progress, CurrentFile, TaskConfig, TaskResult, ErrorMessage, StartedAt, CompletedAt, CreatedAt, UpdatedAt, Priority)
-            VALUES 
-            (@TaskId, @Type, @LibraryId, @Status, @Progress, @CurrentFile, @TaskConfig, @TaskResult, @ErrorMessage, @StartedAt, @CompletedAt, @CreatedAt, @UpdatedAt, @Priority);
+            INSERT INTO BackgroundTasks
+            (TaskId, Type, LibraryId, Status, Progress, CurrentFile, FilePath, TaskConfig, TaskResult, ErrorMessage, StartedAt, CompletedAt, CreatedAt, UpdatedAt, Priority)
+            VALUES
+            (@TaskId, @Type, @LibraryId, @Status, @Progress, @CurrentFile, @FilePath, @TaskConfig, @TaskResult, @ErrorMessage, @StartedAt, @CompletedAt, @CreatedAt, @UpdatedAt, @Priority);
             SELECT last_insert_rowid();";
 
         var id = await _context.Connection.QuerySingleAsync<int>(sql, task);
@@ -79,6 +79,7 @@ public class BackgroundTaskRepository : IBackgroundTaskRepository
                 Status = @Status,
                 Progress = @Progress,
                 CurrentFile = @CurrentFile,
+                FilePath = @FilePath,
                 TaskConfig = @TaskConfig,
                 TaskResult = @TaskResult,
                 ErrorMessage = @ErrorMessage,

@@ -122,6 +122,7 @@ public class DatabaseContext : IDisposable
                 Status VARCHAR(20) DEFAULT 'Pending',
                 Progress INTEGER DEFAULT 0,
                 CurrentFile VARCHAR(1000),
+                FilePath VARCHAR(1000),
                 
                 -- JSON列存储任务特定的配置和结果
                 TaskConfig JSON DEFAULT '{}',
@@ -152,6 +153,7 @@ public class DatabaseContext : IDisposable
                 ProcessedAt DATETIME,
                 ErrorMessage TEXT,
                 RetryCount INTEGER DEFAULT 0,
+                LastRetryAt DATETIME,
                 CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 
@@ -205,6 +207,8 @@ public class DatabaseContext : IDisposable
     private async Task MigrateTablesAsync()
     {
         await AddColumnIfNotExistsAsync("BackgroundTasks", "Priority", "INTEGER DEFAULT 2");
+        await AddColumnIfNotExistsAsync("BackgroundTasks", "FilePath", "VARCHAR(1000)");
+        await AddColumnIfNotExistsAsync("FileChangeEvents", "LastRetryAt", "DATETIME");
     }
 
     private async Task AddColumnIfNotExistsAsync(string tableName, string columnName, string columnDefinition)
