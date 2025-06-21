@@ -1,7 +1,10 @@
+using System.IO;
 using System.Threading.Channels;
 using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Models.Domain;
 using CodebaseMcpServer.Services.Data.Repositories;
+using Microsoft.Extensions.FileSystemGlobbing;
+using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 
 namespace CodebaseMcpServer.Services.Domain;
 
@@ -56,6 +59,9 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("后台任务服务已启动，最大并发数: {MaxConcurrency}", _concurrencySettings.MaxConcurrentTasks);
+        
+        await LoadAndRequeueUnfinishedTasksAsync(stoppingToken);
+        
         var semaphore = new SemaphoreSlim(_concurrencySettings.MaxConcurrentTasks, _concurrencySettings.MaxConcurrentTasks);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -240,24 +246,110 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
 
     private List<string> GetMatchingFiles(string basePath, List<string> includePatterns, List<string> excludePatterns, bool includeSubdirectories)
     {
-        var searchOption = includeSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-        var allFiles = new List<string>();
-        
-        foreach (var pattern in includePatterns)
+        _logger.LogDebug("开始匹配文件: BasePath='{BasePath}', IncludePatterns='{IncludePatterns}', ExcludePatterns='{ExcludePatterns}', IncludeSubdirectories={IncludeSubdirectories}",
+            basePath, string.Join(",", includePatterns), string.Join(",", excludePatterns), includeSubdirectories);
+
+        if (!Directory.Exists(basePath))
         {
-            allFiles.AddRange(Directory.GetFiles(basePath, pattern, searchOption));
+            _logger.LogWarning("基础路径不存在: '{BasePath}'", basePath);
+            return new List<string>();
         }
-        
-        allFiles = allFiles.Distinct().ToList();
-        
-        if (excludePatterns.Any())
+
+        var correctedIncludePatterns = includePatterns.Select(p =>
         {
-            allFiles = allFiles.Where(file => 
-                !excludePatterns.Any(exclude => 
-                    Path.GetRelativePath(basePath, file).Contains(exclude, StringComparison.OrdinalIgnoreCase)))
+            if (p.StartsWith(".") && !p.Contains('*') && !p.Contains('?'))
+            {
+                string prefix = includeSubdirectories ? "**/" : "";
+                string corrected = $"{prefix}*{p}";
+                _logger.LogDebug("修正包含模式: 从 '{OriginalPattern}' 到 '{CorrectedPattern}'", p, corrected);
+                return corrected;
+            }
+            return p;
+        }).ToList();
+
+        var correctedExcludePatterns = excludePatterns.Select(p =>
+        {
+            if (!p.Contains('/') && !p.Contains('\\') && !p.Contains('*'))
+            {
+                string corrected = $"**/{p}/**";
+                _logger.LogDebug("修正排除模式: 从 '{OriginalPattern}' 到 '{CorrectedPattern}'", p, corrected);
+                return corrected;
+            }
+            return p;
+        }).ToList();
+
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        matcher.AddIncludePatterns(correctedIncludePatterns);
+        matcher.AddExcludePatterns(correctedExcludePatterns);
+
+        var directoryInfoWrapper = new DirectoryInfoWrapper(new DirectoryInfo(basePath));
+        var result = matcher.Execute(directoryInfoWrapper);
+
+        var matchedFiles = result.Files.Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path))).ToList();
+        
+        _logger.LogInformation("在 '{BasePath}' 中找到 {FileCount} 个匹配文件。", basePath, matchedFiles.Count);
+        if (matchedFiles.Count == 0)
+        {
+            _logger.LogWarning("未找到匹配文件。请检查 'includePatterns' (修正后: {IncludePatterns}) 和 'excludePatterns' (修正后: {ExcludePatterns})。",
+                string.Join(",", correctedIncludePatterns), string.Join(",", correctedExcludePatterns));
+        }
+
+        return matchedFiles;
+    }
+
+    private async Task LoadAndRequeueUnfinishedTasksAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("正在加载并重新排队未完成的任务...");
+        using var scope = _serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IBackgroundTaskRepository>();
+
+        try
+        {
+            var runningTasks = await repository.GetByStatusAsync(BackgroundTaskStatus.Running);
+            if (runningTasks.Any())
+            {
+                _logger.LogInformation("找到 {Count} 个正在运行的任务。正在将它们重置为待处理状态。", runningTasks.Count);
+                foreach (var task in runningTasks)
+                {
+                    task.Status = BackgroundTaskStatus.Pending;
+                    task.ErrorMessage = "服务重启导致任务中断。";
+                    await repository.UpdateAsync(task);
+                }
+            }
+
+            var pendingTasks = await repository.GetByStatusAsync(BackgroundTaskStatus.Pending);
+            _logger.LogInformation("找到 {Count} 个待处理的任务。", pendingTasks.Count);
+
+            var allUnfinishedTasks = runningTasks.Concat(pendingTasks)
+                .OrderByDescending(t => t.Priority)
+                .ThenBy(t => t.CreatedAt)
                 .ToList();
+
+            if (allUnfinishedTasks.Any())
+            {
+                _logger.LogInformation("总共要重新排队 {Count} 个任务。", allUnfinishedTasks.Count);
+                foreach (var task in allUnfinishedTasks)
+                {
+                    if (!stoppingToken.IsCancellationRequested)
+                    {
+                        await _taskQueue.Writer.WriteAsync(task.Id, stoppingToken);
+                        _logger.LogDebug("任务已重新排队: TaskId={TaskId}", task.TaskId);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("服务停止，取消了任务的重新排队。");
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                _logger.LogInformation("没有需要重新排队的未完成任务。");
+            }
         }
-        
-        return allFiles;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "加载和重新排队未完成的任务时发生错误。");
+        }
     }
 }
