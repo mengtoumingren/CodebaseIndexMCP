@@ -84,7 +84,6 @@ builder.Services.AddScoped<IConfigurationValidationService, ConfigurationValidat
 builder.Services.AddScoped<IConfigurationManagementService, ConfigurationManagementService>();
 
 // =============== 保留现有服务配置 ===============
-builder.Services.AddSingleton<TaskPersistenceService>();
 builder.Services.AddSingleton<QdrantConnectionMonitor>();
 
 // 配置选项读取
