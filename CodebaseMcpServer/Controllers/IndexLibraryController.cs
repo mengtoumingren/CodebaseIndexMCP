@@ -68,7 +68,7 @@ public class IndexLibraryController : ControllerBase
     /// 创建新的索引库
     /// </summary>
     [HttpPost]
-    public async Task<ActionResult<CreateIndexLibraryResponse>> CreateLibrary([FromBody] CreateIndexLibraryRequest request)
+    public async Task<ActionResult<CreateIndexLibraryResponse>> CreateLibrary([FromBody] Models.Domain.CreateLibraryRequest request)
     {
         try
         {

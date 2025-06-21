@@ -98,6 +98,32 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
         return createdTask.TaskId;
     }
 
+    public async Task<List<BackgroundTask>> GetAllTasksAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IBackgroundTaskRepository>();
+        return await repository.GetAllAsync();
+    }
+
+    public async Task<TaskSummaryDto> GetTaskSummaryAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IBackgroundTaskRepository>();
+        var allTasks = await repository.GetAllAsync();
+
+        var summary = new TaskSummaryDto
+        {
+            TotalTasks = allTasks.Count,
+            PendingTasks = allTasks.Count(t => t.Status == BackgroundTaskStatus.Pending),
+            RunningTasks = allTasks.Count(t => t.Status == BackgroundTaskStatus.Running),
+            CompletedTasks = allTasks.Count(t => t.Status == BackgroundTaskStatus.Completed),
+            FailedTasks = allTasks.Count(t => t.Status == BackgroundTaskStatus.Failed),
+            CancelledTasks = allTasks.Count(t => t.Status == BackgroundTaskStatus.Cancelled)
+        };
+
+        return summary;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("后台任务服务已启动，最大并发数: {MaxConcurrency}", _concurrencySettings.MaxConcurrentTasks);
@@ -296,6 +322,8 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
         }
 
         var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+
+        
         var searchService = scope.ServiceProvider.GetRequiredService<EnhancedCodeSemanticSearch>();
         
         var library = await libraryRepository.GetByIdAsync(task.LibraryId.Value);

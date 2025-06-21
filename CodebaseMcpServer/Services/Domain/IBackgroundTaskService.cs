@@ -24,5 +24,15 @@ namespace CodebaseMcpServer.Services.Domain
         /// 将文件删除任务排队
         /// </summary>
         Task<string> QueueFileDeleteTaskAsync(int libraryId, string filePath, TaskPriority priority = TaskPriority.High);
+
+        /// <summary>
+        /// 获取所有后台任务
+        /// </summary>
+        Task<List<BackgroundTask>> GetAllTasksAsync();
+
+        /// <summary>
+        /// 获取任务统计摘要
+        /// </summary>
+        Task<TaskSummaryDto> GetTaskSummaryAsync();
     }
 }

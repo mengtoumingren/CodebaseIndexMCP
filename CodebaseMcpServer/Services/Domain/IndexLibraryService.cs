@@ -5,6 +5,7 @@ using CodebaseMcpServer.Extensions;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using CodebaseMcpServer.Services.Configuration;
 
 namespace CodebaseMcpServer.Services.Domain;
 
@@ -17,15 +18,15 @@ public class IndexLibraryService : IIndexLibraryService
     private readonly ProjectTypeDetector _projectDetector;
     private readonly ILogger<IndexLibraryService> _logger;
     private readonly EnhancedCodeSemanticSearch _searchService;
-    
-    // 注入后台任务服务接口，稍后实现
     private readonly IBackgroundTaskService? _backgroundTaskService;
+    private readonly IConfigurationPresetService _presetService;
 
     public IndexLibraryService(
         IIndexLibraryRepository libraryRepository,
         ProjectTypeDetector projectDetector,
         ILogger<IndexLibraryService> logger,
         EnhancedCodeSemanticSearch searchService,
+        IConfigurationPresetService presetService,
         IBackgroundTaskService? backgroundTaskService = null)
     {
         _libraryRepository = libraryRepository;
@@ -33,84 +34,52 @@ public class IndexLibraryService : IIndexLibraryService
         _logger = logger;
         _searchService = searchService;
         _backgroundTaskService = backgroundTaskService;
+        _presetService = presetService;
     }
 
-    public async Task<CreateIndexLibraryResult> CreateAsync(CreateIndexLibraryRequest request)
+    public async Task<CreateIndexLibraryResult> CreateAsync(CreateLibraryRequest request)
     {
         try
         {
             _logger.LogInformation("创建索引库: {Path}", request.CodebasePath);
             
-            // 1. 验证路径
             if (!Directory.Exists(request.CodebasePath))
             {
                 return CreateIndexLibraryResult.CreateFailed("指定的路径不存在");
             }
             
-            // 2. 检查是否已存在
             var existing = await _libraryRepository.GetByPathAsync(request.CodebasePath.NormalizePath());
             if (existing != null)
             {
                 return CreateIndexLibraryResult.CreateFailed("该路径已存在索引库");
             }
             
-            // 3. 自动检测项目类型和配置
-            var projectType = ProjectTypeDetector.ProjectType.Mixed;
-            WatchConfigurationDto? recommendedWatchConfig = null;
-            MetadataDto? recommendedMetadata = null;
-            
-            if (request.AutoDetectType)
+            WatchConfigurationDto watchConfig;
+            var projectType = "mixed";
+
+            if (request.PresetIds != null && request.PresetIds.Any())
             {
+                _logger.LogInformation("从 {Count} 个预设中合并配置", request.PresetIds.Count);
+                watchConfig = await _presetService.MergePresetsAsync(request.PresetIds);
+                // 在多预设模式下，项目类型可能需要更复杂的逻辑，暂时使用默认值
+            }
+            else
+            {
+                _logger.LogInformation("自动检测项目类型和配置");
                 var detectionResult = await _projectDetector.DetectProjectTypeAsync(request.CodebasePath);
-                projectType = detectionResult.ProjectType;
-                recommendedWatchConfig = _projectDetector.GetRecommendedWatchConfiguration(projectType, request.CodebasePath);
-                recommendedMetadata = _projectDetector.GetRecommendedMetadata(projectType);
-                
-                _logger.LogInformation("检测到项目类型: {Type} (置信度: {Confidence:P0})", 
-                    projectType, detectionResult.Confidence);
+                projectType = detectionResult.ProjectType.ToString().ToLower();
+                watchConfig = _projectDetector.GetRecommendedWatchConfiguration(detectionResult.ProjectType, request.CodebasePath);
+                _logger.LogInformation("检测到项目类型: {Type} (置信度: {Confidence:P0})", projectType, detectionResult.Confidence);
             }
             
-            // 4. 构建JSON配置
-            var watchConfig = new WatchConfigurationDto
-            {
-                FilePatterns = request.FilePatterns?.ToList() ?? 
-                              recommendedWatchConfig?.FilePatterns ?? 
-                              new List<string> { "*.cs" },
-                ExcludePatterns = request.ExcludePatterns?.ToList() ?? 
-                                 recommendedWatchConfig?.ExcludePatterns ?? 
-                                 new List<string> { "bin", "obj", ".git" },
-                IncludeSubdirectories = request.IncludeSubdirectories ?? true,
-                IsEnabled = true,
-                MaxFileSize = request.MaxFileSize ?? 10 * 1024 * 1024,
-                CustomFilters = new List<CustomFilterDto>()
-            };
-            
-            var statistics = new StatisticsDto
-            {
-                IndexedSnippets = 0,
-                TotalFiles = 0,
-                LastIndexingDuration = 0,
-                AverageFileSize = 0,
-                LanguageDistribution = new Dictionary<string, int>(),
-                IndexingHistory = new List<IndexingHistoryDto>()
-            };
-            
+            var statistics = new StatisticsDto();
             var metadata = new MetadataDto
             {
-                ProjectType = projectType.ToString().ToLower(),
-                Framework = recommendedMetadata?.Framework ?? "unknown",
-                Team = request.Team ?? "default",
-                Priority = request.Priority ?? "normal",
-                Tags = request.Tags?.ToList() ?? new List<string>(),
-                CustomSettings = new Dictionary<string, object>
-                {
-                    ["autoDetected"] = request.AutoDetectType,
-                    ["createdVia"] = "api",
-                    ["embeddingModel"] = recommendedMetadata?.CustomSettings?.GetValueOrDefault("embeddingModel") ?? "text-embedding-3-small"
-                }
+                ProjectType = projectType,
+                Team = "default",
+                Priority = "normal"
             };
             
-            // 5. 创建索引库
             var library = new IndexLibrary
             {
                 Name = request.Name ?? Path.GetFileName(request.CodebasePath.TrimEnd(Path.DirectorySeparatorChar)),
@@ -124,7 +93,6 @@ public class IndexLibraryService : IIndexLibraryService
             
             library = await _libraryRepository.CreateAsync(library);
             
-            // 6. 排队索引任务
             string? taskId = null;
             if (_backgroundTaskService != null)
             {
@@ -184,7 +152,6 @@ public class IndexLibraryService : IIndexLibraryService
                 return false;
             }
 
-            // 清理Qdrant中的数据
             await _searchService.DeleteCollectionAsync(library.CollectionName);
             
             _logger.LogInformation("删除索引库: {LibraryId} ({Name})", id, library.Name);
@@ -231,20 +198,13 @@ public class IndexLibraryService : IIndexLibraryService
             throw new ArgumentException($"索引库不存在: {libraryId}");
         }
 
-        // 重建索引 - 清除现有统计信息
         var emptyStats = new StatisticsDto
         {
-            IndexedSnippets = 0,
-            TotalFiles = 0,
-            LastIndexingDuration = 0,
-            AverageFileSize = 0,
-            LanguageDistribution = new Dictionary<string, int>(),
-            IndexingHistory = library.StatisticsObject.IndexingHistory // 保留历史记录
+            IndexingHistory = library.StatisticsObject.IndexingHistory
         };
         
         await _libraryRepository.UpdateStatisticsAsync(libraryId, emptyStats);
         
-        // 更新状态为pending
         library.Status = IndexLibraryStatus.Pending;
         await _libraryRepository.UpdateAsync(library);
 
@@ -255,24 +215,10 @@ public class IndexLibraryService : IIndexLibraryService
         return taskId;
     }
 
-    public async Task<bool> StopIndexingAsync(int libraryId)
+    public Task<bool> StopIndexingAsync(int libraryId)
     {
-        if (_backgroundTaskService == null)
-        {
-            return false;
-        }
-
-        try
-        {
-            // TODO: 实现停止指定库的索引任务
-            _logger.LogInformation("停止索引任务: LibraryId={LibraryId}", libraryId);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "停止索引任务失败: LibraryId={LibraryId}", libraryId);
-            return false;
-        }
+        _logger.LogWarning("StopIndexingAsync 未实现");
+        return Task.FromResult(false);
     }
 
     public async Task<bool> UpdateWatchConfigurationAsync(int libraryId, UpdateWatchConfigurationRequest request)
@@ -280,29 +226,15 @@ public class IndexLibraryService : IIndexLibraryService
         try
         {
             var library = await _libraryRepository.GetByIdAsync(libraryId);
-            if (library == null)
-            {
-                return false;
-            }
+            if (library == null) return false;
             
-            // 解析现有JSON配置
             var currentConfig = library.WatchConfigObject;
             
-            // 更新字段
-            if (request.FilePatterns != null)
-                currentConfig.FilePatterns = request.FilePatterns.ToList();
-            
-            if (request.ExcludePatterns != null)
-                currentConfig.ExcludePatterns = request.ExcludePatterns.ToList();
-            
-            if (request.IncludeSubdirectories.HasValue)
-                currentConfig.IncludeSubdirectories = request.IncludeSubdirectories.Value;
-            
-            if (request.IsEnabled.HasValue)
-                currentConfig.IsEnabled = request.IsEnabled.Value;
-            
-            if (request.MaxFileSize.HasValue)
-                currentConfig.MaxFileSize = request.MaxFileSize.Value;
+            if (request.FilePatterns != null) currentConfig.FilePatterns = request.FilePatterns.ToList();
+            if (request.ExcludePatterns != null) currentConfig.ExcludePatterns = request.ExcludePatterns.ToList();
+            if (request.IncludeSubdirectories.HasValue) currentConfig.IncludeSubdirectories = request.IncludeSubdirectories.Value;
+            if (request.IsEnabled.HasValue) currentConfig.IsEnabled = request.IsEnabled.Value;
+            if (request.MaxFileSize.HasValue) currentConfig.MaxFileSize = request.MaxFileSize.Value;
             
             if (request.CustomFilters != null)
             {
@@ -314,15 +246,9 @@ public class IndexLibraryService : IIndexLibraryService
                 }).ToList();
             }
             
-            // 保存更新的JSON配置
             var success = await _libraryRepository.UpdateWatchConfigAsync(libraryId, currentConfig);
             
-            if (success)
-            {
-                _logger.LogInformation("监控配置更新成功: LibraryId={LibraryId}", libraryId);
-                
-                // TODO: 通知文件监控服务重启监控
-            }
+            if (success) _logger.LogInformation("监控配置更新成功: LibraryId={LibraryId}", libraryId);
             
             return success;
         }
@@ -338,27 +264,15 @@ public class IndexLibraryService : IIndexLibraryService
         try
         {
             var library = await _libraryRepository.GetByIdAsync(libraryId);
-            if (library == null)
-            {
-                return false;
-            }
+            if (library == null) return false;
             
             var currentMetadata = library.MetadataObject;
             
-            if (!string.IsNullOrEmpty(request.ProjectType))
-                currentMetadata.ProjectType = request.ProjectType;
-            
-            if (!string.IsNullOrEmpty(request.Framework))
-                currentMetadata.Framework = request.Framework;
-            
-            if (!string.IsNullOrEmpty(request.Team))
-                currentMetadata.Team = request.Team;
-            
-            if (!string.IsNullOrEmpty(request.Priority))
-                currentMetadata.Priority = request.Priority;
-            
-            if (request.Tags != null)
-                currentMetadata.Tags = request.Tags.ToList();
+            if (!string.IsNullOrEmpty(request.ProjectType)) currentMetadata.ProjectType = request.ProjectType;
+            if (!string.IsNullOrEmpty(request.Framework)) currentMetadata.Framework = request.Framework;
+            if (!string.IsNullOrEmpty(request.Team)) currentMetadata.Team = request.Team;
+            if (!string.IsNullOrEmpty(request.Priority)) currentMetadata.Priority = request.Priority;
+            if (request.Tags != null) currentMetadata.Tags = request.Tags.ToList();
             
             if (request.CustomSettings != null)
             {
@@ -370,10 +284,7 @@ public class IndexLibraryService : IIndexLibraryService
             
             var success = await _libraryRepository.UpdateMetadataAsync(libraryId, currentMetadata);
             
-            if (success)
-            {
-                _logger.LogInformation("元数据更新成功: LibraryId={LibraryId}", libraryId);
-            }
+            if (success) _logger.LogInformation("元数据更新成功: LibraryId={LibraryId}", libraryId);
             
             return success;
         }
@@ -412,8 +323,7 @@ public class IndexLibraryService : IIndexLibraryService
     public async Task<IndexStatisticsDto> GetStatisticsAsync(int libraryId)
     {
         var library = await _libraryRepository.GetByIdAsync(libraryId);
-        if (library == null)
-            return null;
+        if (library == null) return null;
         
         var stats = library.StatisticsObject;
         
@@ -467,13 +377,10 @@ public class IndexLibraryService : IIndexLibraryService
         return await _libraryRepository.GetLibrariesForMonitoringAsync();
     }
 
-    // 兼容性方法 - 用于现有MCP工具
     public async Task<CodebaseMapping?> GetLegacyMappingByPathAsync(string path)
     {
         var library = await _libraryRepository.GetByPathAsync(path.NormalizePath());
-        if (library == null)
-            return null;
-
+        if (library == null) return null;
         return ConvertToLegacyMapping(library);
     }
 

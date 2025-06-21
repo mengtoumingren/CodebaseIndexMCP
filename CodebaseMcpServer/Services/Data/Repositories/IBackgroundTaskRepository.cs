@@ -16,4 +16,5 @@ public interface IBackgroundTaskRepository
     Task<bool> UpdateAsync(BackgroundTask task);
     Task<bool> DeleteAsync(int id);
     Task<int> CleanupCompletedTasksAsync(TimeSpan maxAge);
+    Task<List<BackgroundTask>> GetAllAsync();
 }

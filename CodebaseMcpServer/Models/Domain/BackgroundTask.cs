@@ -11,6 +11,7 @@ public class BackgroundTask
     public string TaskId { get; set; } = Guid.NewGuid().ToString();
     public BackgroundTaskType Type { get; set; }
     public int? LibraryId { get; set; }
+    
     public BackgroundTaskStatus Status { get; set; } = BackgroundTaskStatus.Pending;
     public int Progress { get; set; }
     public string? FilePath { get; set; } // 新增，用于存储变更的文件路径

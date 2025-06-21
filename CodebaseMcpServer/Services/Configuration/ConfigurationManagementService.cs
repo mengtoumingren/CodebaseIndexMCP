@@ -512,11 +512,11 @@ public class ConfigurationManagementService : IConfigurationManagementService
 /// </summary>
 public interface IConfigurationManagementService
 {
-    Task<ConfigurationApplyResult> ApplyPresetToLibraryAsync(int libraryId, string presetId, bool validateOnly = false);
-    Task<ConfigurationRecommendation> GetSmartRecommendationAsync(string projectPath, string? currentProjectType = null);
-    ConfigurationDiff CompareConfigurations(WatchConfigurationDto config1, WatchConfigurationDto config2, string? label1 = null, string? label2 = null);
-    Task<string> ExportLibraryConfigurationAsync(int libraryId, bool includeStatistics = false);
-    Task<ConfigurationImportResult> ImportLibraryConfigurationAsync(int libraryId, string configJson, bool validateOnly = false);
+Task<ConfigurationApplyResult> ApplyPresetToLibraryAsync(int libraryId, string presetId, bool validateOnly = false);
+Task<ConfigurationRecommendation> GetSmartRecommendationAsync(string projectPath, string? currentProjectType = null);
+ConfigurationDiff CompareConfigurations(WatchConfigurationDto config1, WatchConfigurationDto config2, string? label1 = null, string? label2 = null);
+Task<string> ExportLibraryConfigurationAsync(int libraryId, bool includeStatistics = false);
+Task<ConfigurationImportResult> ImportLibraryConfigurationAsync(int libraryId, string configJson, bool validateOnly = false);
 }
 
 // 相关数据模型

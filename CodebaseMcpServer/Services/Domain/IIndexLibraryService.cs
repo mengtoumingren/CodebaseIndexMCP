@@ -8,7 +8,7 @@ namespace CodebaseMcpServer.Services.Domain;
 public interface IIndexLibraryService
 {
     // 基础索引库管理
-    Task<CreateIndexLibraryResult> CreateAsync(CreateIndexLibraryRequest request);
+    Task<CreateIndexLibraryResult> CreateAsync(CreateLibraryRequest request);
     Task<IndexLibrary?> GetByIdAsync(int id);
     Task<IndexLibrary?> GetByPathAsync(string path);
     Task<IndexLibrary?> GetByCollectionNameAsync(string collectionName);
@@ -50,19 +50,6 @@ public interface IIndexLibraryService
 /// <summary>
 /// 创建索引库请求
 /// </summary>
-public class CreateIndexLibraryRequest
-{
-    public string CodebasePath { get; set; } = string.Empty;
-    public string? Name { get; set; }
-    public string[]? FilePatterns { get; set; }
-    public string[]? ExcludePatterns { get; set; }
-    public bool? IncludeSubdirectories { get; set; }
-    public long? MaxFileSize { get; set; }
-    public bool AutoDetectType { get; set; } = true;
-    public string? Team { get; set; }
-    public string? Priority { get; set; }
-    public string[]? Tags { get; set; }
-}
 
 /// <summary>
 /// 创建索引库结果

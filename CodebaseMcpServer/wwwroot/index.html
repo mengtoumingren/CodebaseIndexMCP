@@ -60,6 +60,7 @@
             transition: all 0.3s ease;
             font-size: 1rem;
             color: #666;
+            text-decoration: none;
         }
 
         .nav-tab.active {
@@ -165,9 +166,10 @@
         }
 
         .status-completed { background: #d4edda; color: #155724; }
-        .status-indexing { background: #fff3cd; color: #856404; }
+        .status-indexing, .status-running { background: #fff3cd; color: #856404; }
         .status-pending { background: #e2e3e5; color: #383d41; }
         .status-failed { background: #f8d7da; color: #721c24; }
+        .status-cancelled { background: #f0f0f0; color: #555; }
 
         .library-info {
             color: #666;
@@ -216,42 +218,16 @@
             background: #5a6fd8;
         }
 
-        .btn-secondary {
-            background: #6c757d;
-        }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
 
-        .btn-secondary:hover {
-            background: #545b62;
-        }
-
-        .btn-success {
-            background: #28a745;
-        }
-
-        .btn-success:hover {
-            background: #218838;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
-        }
-
-        .form-group {
-            margin-bottom: 1rem;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-            color: #333;
-        }
-
-        .form-input, .form-select {
+        .form-group { margin-bottom: 1rem; }
+        .form-label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: #333; }
+        .form-input, .form-select, .form-textarea {
             width: 100%;
             padding: 0.75rem;
             border: 1px solid #ddd;
@@ -259,11 +235,21 @@
             font-size: 1rem;
             transition: border-color 0.2s ease;
         }
-
-        .form-input:focus, .form-select:focus {
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+        .preset-checkbox-group {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .preset-checkbox-item {
+            display: block;
+            margin-bottom: 0.5rem;
         }
 
         .loading {
@@ -275,40 +261,21 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
 
-        .alert {
-            padding: 1rem;
-            border-radius: 4px;
-            margin-bottom: 1rem;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .preset-grid {
+        .alert { padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .hidden { display: none !important; }
+ 
+         .preset-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 1rem;
         }
-
         .preset-card {
             background: white;
             border: 1px solid #e9ecef;
@@ -316,41 +283,50 @@
             padding: 1rem;
             transition: all 0.2s ease;
         }
-
         .preset-card:hover {
             border-color: #667eea;
             box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
         }
+        .preset-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .preset-name { font-weight: 600; color: #333; }
+        .preset-badge { background: #667eea; color: white; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem; }
+        .preset-description { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+        .preset-details { font-size: 0.8rem; color: #666; }
 
-        .preset-header {
+        .task-table { width: 100%; border-collapse: collapse; }
+        .task-table th, .task-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+        .task-table th { background: #f8f9fa; }
+        .progress-bar {
+            width: 100%;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar-inner {
+            height: 10px;
+            background-color: #667eea;
+            transition: width 0.3s ease;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
-            margin-bottom: 0.5rem;
+            z-index: 1000;
         }
-
-        .preset-name {
-            font-weight: 600;
-            color: #333;
-        }
-
-        .preset-badge {
-            background: #667eea;
-            color: white;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-        }
-
-        .preset-description {
-            color: #666;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-
-        .preset-details {
-            font-size: 0.8rem;
-            color: #666;
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -362,38 +338,20 @@
 
     <div class="container">
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('dashboard')">📊 仪表板</button>
-            <button class="nav-tab" onclick="showTab('libraries')">📚 索引库管理</button>
-            <button class="nav-tab" onclick="showTab('presets')">📝 配置预设</button>
-            <button class="nav-tab" onclick="showTab('create')">➕ 创建索引库</button>
+            <a class="nav-tab" href="#dashboard">📊 仪表板</a>
+            <a class="nav-tab" href="#libraries">📚 索引库管理</a>
+            <a class="nav-tab" href="#tasks">📈 任务监控</a>
+            <a class="nav-tab" href="#presets">📝 配置预设</a>
+            <a class="nav-tab" href="#create">➕ 创建索引库</a>
         </div>
 
         <!-- 仪表板 -->
-        <div id="dashboard" class="tab-content active">
-            <div class="stats-grid" id="statsGrid">
-                <div class="stat-card">
-                    <div class="stat-number" id="totalLibraries">-</div>
-                    <div class="stat-label">总索引库数</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="completedLibraries">-</div>
-                    <div class="stat-label">已完成索引</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="totalFiles">-</div>
-                    <div class="stat-label">总文件数</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="totalSnippets">-</div>
-                    <div class="stat-label">总代码片段</div>
-                </div>
-            </div>
-
+        <div id="dashboard" class="tab-content">
+            <div class="stats-grid" id="statsGrid"></div>
             <div class="card">
                 <h3>📈 项目类型分布</h3>
                 <div id="projectTypeChart">加载中...</div>
             </div>
-
             <div class="card">
                 <h3>🔥 最近活动</h3>
                 <div id="recentActivity">加载中...</div>
@@ -404,9 +362,16 @@
         <div id="libraries" class="tab-content">
             <div class="card">
                 <h3>📚 索引库列表</h3>
-                <div id="librariesContainer">
-                    <div class="loading"></div> 加载中...
-                </div>
+                <div id="librariesContainer"><div class="loading"></div> 加载中...</div>
+            </div>
+        </div>
+
+        <!-- 任务监控 -->
+        <div id="tasks" class="tab-content">
+            <div class="stats-grid" id="taskStatsGrid"></div>
+            <div class="card">
+                <h3>📋 任务列表</h3>
+                <div id="tasksContainer"><div class="loading"></div> 加载中...</div>
             </div>
         </div>
 
@@ -418,9 +383,7 @@
                     <button class="btn" onclick="loadPresets()">🔄 刷新预设</button>
                     <button class="btn btn-success" onclick="showCreatePresetForm()">➕ 创建自定义预设</button>
                 </div>
-                <div id="presetsContainer">
-                    <div class="loading"></div> 加载中...
-                </div>
+                <div id="presetsContainer"><div class="loading"></div> 加载中...</div>
             </div>
         </div>
 
@@ -431,44 +394,55 @@
                 <form id="createLibraryForm">
                     <div class="form-group">
                         <label class="form-label">代码库路径 *</label>
-                        <input type="text" class="form-input" id="codebasePath" required 
-                               placeholder="例如: C:\MyProject 或 /path/to/project">
+                        <input type="text" class="form-input" id="codebasePath" required placeholder="例如: C:\MyProject 或 /path/to/project">
                     </div>
-                    
                     <div class="form-group">
                         <label class="form-label">索引库名称</label>
-                        <input type="text" class="form-input" id="libraryName" 
-                               placeholder="留空将自动生成">
+                        <input type="text" class="form-input" id="libraryName" placeholder="留空将自动生成">
                     </div>
-                    
                     <div class="form-group">
-                        <label class="form-label">团队</label>
-                        <input type="text" class="form-input" id="team" 
-                               placeholder="例如: backend, frontend, data">
+                        <label class="form-label">配置预设 (可多选)</label>
+                        <div id="presetCheckboxes" class="preset-checkbox-group">
+                            <div class="loading"></div> 加载中...
+                        </div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">优先级</label>
-                        <select class="form-select" id="priority">
-                            <option value="normal">普通</option>
-                            <option value="high">高</option>
-                            <option value="low">低</option>
-                            <option value="critical">紧急</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" id="autoDetect" checked> 
-                            启用智能项目类型检测
-                        </label>
-                    </div>
-                    
                     <button type="submit" class="btn btn-success">🚀 创建索引库</button>
                 </form>
-                
                 <div id="createResult" class="hidden"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- 创建预设模态框 -->
+    <div id="createPresetModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>创建自定义预设</h3>
+            <form id="createPresetForm">
+                <div class="form-group">
+                    <label class="form-label">预设名称 *</label>
+                    <input type="text" id="presetName" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">描述</label>
+                    <textarea id="presetDescription" class="form-textarea" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">项目类型</label>
+                    <input type="text" id="presetProjectType" class="form-input" placeholder="e.g., csharp, typescript, python">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">文件包含模式 (逗号分隔)</label>
+                    <input type="text" id="presetFilePatterns" class="form-input" placeholder="e.g., *.cs,*.json">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">排除模式 (逗号分隔)</label>
+                    <input type="text" id="presetExcludePatterns" class="form-input" placeholder="e.g., bin/,obj/">
+                </div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn btn-secondary" onclick="hideCreatePresetForm()">取消</button>
+                    <button type="submit" class="btn btn-success">保存预设</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -480,85 +454,71 @@
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadDashboard();
+            handleNavigation();
+            window.addEventListener('hashchange', handleNavigation);
             
-            // 绑定创建表单
             document.getElementById('createLibraryForm').addEventListener('submit', createLibrary);
+            document.getElementById('createPresetForm').addEventListener('submit', saveCustomPreset);
         });
 
-        // 标签页切换
-        function showTab(tabName) {
-            // 隐藏所有标签页
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
+        // 导航处理
+        function handleNavigation() {
+            const tabName = window.location.hash.substring(1) || 'dashboard';
             
-            // 显示选中的标签页
-            document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             
-            // 根据标签页加载数据
+            const activeTab = document.getElementById(tabName);
+            if (activeTab) {
+                activeTab.classList.add('active');
+                document.querySelector(`.nav-tab[href="#${tabName}"]`).classList.add('active');
+            }
+            
             switch(tabName) {
-                case 'dashboard':
-                    loadDashboard();
-                    break;
-                case 'libraries':
-                    loadLibraries();
-                    break;
-                case 'presets':
-                    loadPresets();
-                    break;
+                case 'dashboard': loadDashboard(); break;
+                case 'libraries': loadLibraries(); break;
+                case 'tasks': loadTasks(); break;
+                case 'presets': loadPresets(); break;
+                case 'create': loadCreateFormPresets(); break;
             }
         }
 
         // 加载仪表板数据
         async function loadDashboard() {
             try {
-                // 加载全局统计
                 const statsResponse = await fetch('/api/IndexLibrary/statistics/global');
                 globalStats = await statsResponse.json();
                 
-                document.getElementById('totalLibraries').textContent = globalStats.totalLibraries || 0;
-                document.getElementById('completedLibraries').textContent = globalStats.completedLibraries || 0;
-                document.getElementById('totalFiles').textContent = globalStats.totalFiles || 0;
-                document.getElementById('totalSnippets').textContent = globalStats.totalSnippets || 0;
+                const statsGrid = document.getElementById('statsGrid');
+                statsGrid.innerHTML = `
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalLibraries || 0}</div><div class="stat-label">总索引库数</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.completedLibraries || 0}</div><div class="stat-label">已完成索引</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalFiles || 0}</div><div class="stat-label">总文件数</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalSnippets || 0}</div><div class="stat-label">总代码片段</div></div>
+                `;
                 
-                // 加载项目类型分布
                 const typeResponse = await fetch('/api/IndexLibrary/statistics/project-type-distribution');
                 const typeDistribution = await typeResponse.json();
                 
                 let chartHtml = '';
                 for (const [type, count] of Object.entries(typeDistribution)) {
-                    const percentage = ((count / globalStats.totalLibraries) * 100).toFixed(1);
-                    chartHtml += `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                            <span>${type}</span>
-                            <span>${count} (${percentage}%)</span>
-                        </div>
-                    `;
+                    const percentage = globalStats.totalLibraries ? ((count / globalStats.totalLibraries) * 100).toFixed(1) : 0;
+                    chartHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"><span>${type}</span><span>${count} (${percentage}%)</span></div>`;
                 }
                 document.getElementById('projectTypeChart').innerHTML = chartHtml || '暂无数据';
                 
-                // 加载最近活动
                 const librariesResponse = await fetch('/api/IndexLibrary');
                 const recentLibraries = await librariesResponse.json();
                 
                 let activityHtml = '';
                 recentLibraries.slice(0, 5).forEach(lib => {
-                    const timeAgo = getTimeAgo(new Date(lib.updatedAt));
-                    activityHtml += `
-                        <div style="padding: 0.5rem 0; border-bottom: 1px solid #eee;">
-                            <strong>${lib.name}</strong> - ${lib.status} (${timeAgo})
-                        </div>
-                    `;
+                    activityHtml += `<div style="padding: 0.5rem 0; border-bottom: 1px solid #eee;"><strong>${lib.name}</strong> - ${lib.status} (${getTimeAgo(new Date(lib.updatedAt))})</div>`;
                 });
                 document.getElementById('recentActivity').innerHTML = activityHtml || '暂无活动';
                 
             } catch (error) {
                 console.error('加载仪表板数据失败:', error);
+                document.getElementById('statsGrid').innerHTML = '<div class="alert alert-error">加载统计数据失败</div>';
             }
         }
 
@@ -577,36 +537,69 @@
                                 <div class="status-badge status-${lib.status.toLowerCase()}">${getStatusText(lib.status)}</div>
                             </div>
                             <div class="library-info">📁 ${lib.codebasePath}</div>
-                            <div class="library-info">🏷️ ${lib.projectType} | 👥 ${lib.team}</div>
-                            <div class="library-info">🔧 ${lib.framework}</div>
+                            <div class="library-info">🏷️ ${lib.projectType || 'N/A'}</div>
                             <div class="library-stats">
-                                <div class="library-stat">
-                                    <div class="library-stat-number">${lib.totalFiles}</div>
-                                    <div class="library-stat-label">文件</div>
-                                </div>
-                                <div class="library-stat">
-                                    <div class="library-stat-number">${lib.indexedSnippets}</div>
-                                    <div class="library-stat-label">片段</div>
-                                </div>
-                                <div class="library-stat">
-                                    <div class="library-stat-number">${lib.isMonitored ? '✅' : '❌'}</div>
-                                    <div class="library-stat-label">监控</div>
-                                </div>
+                                <div class="library-stat"><div class="library-stat-number">${lib.totalFiles}</div><div class="library-stat-label">文件</div></div>
+                                <div class="library-stat"><div class="library-stat-number">${lib.indexedSnippets}</div><div class="library-stat-label">片段</div></div>
+                                <div class="library-stat"><div class="library-stat-number">${lib.isMonitored ? '✅' : '❌'}</div><div class="library-stat-label">监控</div></div>
                             </div>
                             <div style="margin-top: 1rem;">
                                 <button class="btn" onclick="startIndexing(${lib.id})">🚀 开始索引</button>
                                 <button class="btn btn-secondary" onclick="rebuildIndex(${lib.id})">🔄 重建</button>
                                 <button class="btn btn-danger" onclick="deleteLibrary(${lib.id})">🗑️ 删除</button>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 });
                 html += '</div>';
-                
                 document.getElementById('librariesContainer').innerHTML = html;
             } catch (error) {
-                document.getElementById('librariesContainer').innerHTML = 
-                    '<div class="alert alert-error">加载索引库列表失败: ' + error.message + '</div>';
+                document.getElementById('librariesContainer').innerHTML = `<div class="alert alert-error">加载索引库列表失败: ${error.message}</div>`;
+            }
+        }
+
+        // 加载任务监控数据
+        async function loadTasks() {
+            try {
+                const [summaryRes, tasksRes] = await Promise.all([
+                    fetch('/api/task/summary'),
+                    fetch('/api/task')
+                ]);
+                const summary = await summaryRes.json();
+                const tasks = await tasksRes.json();
+
+                const statsGrid = document.getElementById('taskStatsGrid');
+                statsGrid.innerHTML = `
+                    <div class="stat-card"><div class="stat-number">${summary.totalTasks}</div><div class="stat-label">总任务数</div></div>
+                    <div class="stat-card"><div class="stat-number">${summary.runningTasks}</div><div class="stat-label">运行中</div></div>
+                    <div class="stat-card"><div class="stat-number">${summary.completedTasks}</div><div class="stat-label">已完成</div></div>
+                    <div class="stat-card"><div class="stat-number">${summary.failedTasks}</div><div class="stat-label">失败</div></div>
+                `;
+
+                let tasksHtml = `
+                    <table class="task-table">
+                        <thead><tr><th>任务ID</th><th>类型</th><th>状态</th><th>进度</th><th>创建时间</th><th>详情</th></tr></thead>
+                        <tbody>`;
+                tasks.forEach(task => {
+                    tasksHtml += `
+                        <tr>
+                            <td>${task.taskId.substring(0, 8)}...</td>
+                            <td>${task.type}</td>
+                            <td><span class="status-badge status-${task.status.toLowerCase()}">${getStatusText(task.status)}</span></td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress-bar-inner" style="width: ${task.progress}%;"></div>
+                                </div>
+                            </td>
+                            <td>${new Date(task.createdAt).toLocaleString()}</td>
+                            <td>${task.errorMessage || task.currentFile || ''}</td>
+                        </tr>`;
+                });
+                tasksHtml += '</tbody></table>';
+                document.getElementById('tasksContainer').innerHTML = tasksHtml;
+
+            } catch (error) {
+                console.error('加载任务数据失败:', error);
+                document.getElementById('tasksContainer').innerHTML = `<div class="alert alert-error">加载任务数据失败: ${error.message}</div>`;
             }
         }
 
@@ -634,28 +627,42 @@
                                 <button class="btn" onclick="exportPreset('${preset.id}')">📤 导出</button>
                                 ${!preset.isBuiltIn ? `<button class="btn btn-danger" onclick="deletePreset('${preset.id}')">🗑️ 删除</button>` : ''}
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 });
                 html += '</div>';
-                
                 document.getElementById('presetsContainer').innerHTML = html;
             } catch (error) {
-                document.getElementById('presetsContainer').innerHTML = 
-                    '<div class="alert alert-error">加载配置预设失败: ' + error.message + '</div>';
+                document.getElementById('presetsContainer').innerHTML = `<div class="alert alert-error">加载配置预设失败: ${error.message}</div>`;
+            }
+        }
+
+        // 为创建表单加载预设
+        async function loadCreateFormPresets() {
+            try {
+                if (!presets.length) {
+                    const response = await fetch('/api/Configuration/presets');
+                    presets = await response.json();
+                }
+                const container = document.getElementById('presetCheckboxes');
+                let html = '';
+                presets.forEach(p => {
+                    html += `<label class="preset-checkbox-item"><input type="checkbox" value="${p.id}"> ${p.name} (${p.isBuiltIn ? '内置' : '自定义'})</label>`;
+                });
+                container.innerHTML = html || '没有可用的预设。';
+            } catch (error) {
+                document.getElementById('presetCheckboxes').innerHTML = `<div class="alert alert-error">加载预设失败</div>`;
             }
         }
 
         // 创建索引库
         async function createLibrary(event) {
             event.preventDefault();
+            const selectedPresetIds = Array.from(document.querySelectorAll('#presetCheckboxes input:checked')).map(cb => cb.value);
             
             const formData = {
                 codebasePath: document.getElementById('codebasePath').value,
                 name: document.getElementById('libraryName').value || null,
-                team: document.getElementById('team').value || null,
-                priority: document.getElementById('priority').value || null,
-                autoDetectType: document.getElementById('autoDetect').checked
+                presetIds: selectedPresetIds
             };
             
             try {
@@ -664,163 +671,115 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
-                
                 const result = await response.json();
-                
                 if (response.ok && result.success) {
-                    document.getElementById('createResult').innerHTML = 
-                        `<div class="alert alert-success">✅ 索引库创建成功！任务ID: ${result.taskId || 'N/A'}</div>`;
+                    document.getElementById('createResult').innerHTML = `<div class="alert alert-success">✅ 索引库创建成功！任务ID: ${result.taskId || 'N/A'}</div>`;
                     document.getElementById('createResult').classList.remove('hidden');
-                    
-                    // 清空表单
                     document.getElementById('createLibraryForm').reset();
-                    
-                    // 刷新索引库列表
-                    if (document.getElementById('libraries').classList.contains('active')) {
-                        loadLibraries();
-                    }
                 } else {
                     throw new Error(result.message || '创建失败');
                 }
             } catch (error) {
-                document.getElementById('createResult').innerHTML = 
-                    `<div class="alert alert-error">❌ 创建失败: ${error.message}</div>`;
+                document.getElementById('createResult').innerHTML = `<div class="alert alert-error">❌ 创建失败: ${error.message}</div>`;
                 document.getElementById('createResult').classList.remove('hidden');
             }
         }
 
-        // 开始索引
+        // 显示/隐藏创建预设模态框
+        function showCreatePresetForm() { document.getElementById('createPresetModal').classList.remove('hidden'); }
+        function hideCreatePresetForm() { document.getElementById('createPresetModal').classList.add('hidden'); }
+
+        // 保存自定义预设
+        async function saveCustomPreset(event) {
+            event.preventDefault();
+            const presetData = {
+                name: document.getElementById('presetName').value,
+                description: document.getElementById('presetDescription').value,
+                projectType: document.getElementById('presetProjectType').value,
+                category: 'Custom',
+                isBuiltIn: false,
+                watchConfiguration: {
+                    filePatterns: document.getElementById('presetFilePatterns').value.split(',').map(s => s.trim()).filter(Boolean),
+                    excludePatterns: document.getElementById('presetExcludePatterns').value.split(',').map(s => s.trim()).filter(Boolean),
+                }
+            };
+
+            try {
+                const response = await fetch('/api/Configuration/presets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(presetData)
+                });
+                if (response.ok) {
+                    alert('预设创建成功!');
+                    hideCreatePresetForm();
+                    loadPresets();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.message || '创建失败');
+                }
+            } catch (error) {
+                alert(`❌ 创建预设失败: ${error.message}`);
+            }
+        }
+
+        // 其他操作函数 (startIndexing, rebuildIndex, etc.)
         async function startIndexing(libraryId) {
             try {
-                const response = await fetch(`/api/IndexLibrary/${libraryId}/index`, {
-                    method: 'POST'
-                });
+                const response = await fetch(`/api/IndexLibrary/${libraryId}/index`, { method: 'POST' });
                 const result = await response.json();
-                
                 if (response.ok) {
                     alert(`✅ 索引任务已启动！任务ID: ${result.taskId}`);
-                    loadLibraries(); // 刷新列表
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                alert(`❌ 启动索引失败: ${error.message}`);
-            }
+                    if(window.location.hash === '#libraries') loadLibraries();
+                } else { throw new Error(result.message); }
+            } catch (error) { alert(`❌ 启动索引失败: ${error.message}`); }
         }
-
-        // 重建索引
         async function rebuildIndex(libraryId) {
-            if (!confirm('确定要重建此索引库吗？这将清除现有索引数据。')) {
-                return;
-            }
-            
+            if (!confirm('确定要重建此索引库吗？')) return;
             try {
-                const response = await fetch(`/api/IndexLibrary/${libraryId}/rebuild`, {
-                    method: 'POST'
-                });
+                const response = await fetch(`/api/IndexLibrary/${libraryId}/rebuild`, { method: 'POST' });
                 const result = await response.json();
-                
                 if (response.ok) {
-                    alert(`✅ 重建索引任务已启动！任务ID: ${result.taskId}`);
-                    loadLibraries(); // 刷新列表
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                alert(`❌ 重建索引失败: ${error.message}`);
-            }
+                    alert(`✅ 重建任务已启动！任务ID: ${result.taskId}`);
+                    if(window.location.hash === '#libraries') loadLibraries();
+                } else { throw new Error(result.message); }
+            } catch (error) { alert(`❌ 重建失败: ${error.message}`); }
         }
-
-        // 删除索引库
         async function deleteLibrary(libraryId) {
-            if (!confirm('确定要删除此索引库吗？此操作不可恢复。')) {
-                return;
-            }
-            
+            if (!confirm('确定要删除此索引库吗？')) return;
             try {
-                const response = await fetch(`/api/IndexLibrary/${libraryId}`, {
-                    method: 'DELETE'
-                });
-                const result = await response.json();
-                
+                const response = await fetch(`/api/IndexLibrary/${libraryId}`, { method: 'DELETE' });
                 if (response.ok) {
                     alert('✅ 索引库删除成功！');
-                    loadLibraries(); // 刷新列表
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                alert(`❌ 删除失败: ${error.message}`);
-            }
+                    loadLibraries();
+                } else { const result = await response.json(); throw new Error(result.message); }
+            } catch (error) { alert(`❌ 删除失败: ${error.message}`); }
         }
-
-        // 导出预设
         async function exportPreset(presetId) {
-            try {
-                const response = await fetch(`/api/Configuration/presets/${presetId}/export`);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `preset-${presetId}.json`;
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                } else {
-                    throw new Error('导出失败');
-                }
-            } catch (error) {
-                alert(`❌ 导出预设失败: ${error.message}`);
-            }
+            window.location.href = `/api/Configuration/presets/${presetId}/export`;
         }
-
-        // 删除预设
         async function deletePreset(presetId) {
-            if (!confirm('确定要删除此自定义预设吗？')) {
-                return;
-            }
-            
+            if (!confirm('确定要删除此自定义预设吗？')) return;
             try {
-                const response = await fetch(`/api/Configuration/presets/${presetId}`, {
-                    method: 'DELETE'
-                });
-                const result = await response.json();
-                
+                const response = await fetch(`/api/Configuration/presets/${presetId}`, { method: 'DELETE' });
                 if (response.ok) {
                     alert('✅ 预设删除成功！');
-                    loadPresets(); // 刷新列表
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                alert(`❌ 删除预设失败: ${error.message}`);
-            }
+                    loadPresets();
+                } else { const result = await response.json(); throw new Error(result.message); }
+            } catch (error) { alert(`❌ 删除预设失败: ${error.message}`); }
         }
 
         // 辅助函数
         function getStatusText(status) {
-            const statusMap = {
-                'Completed': '已完成',
-                'Indexing': '索引中',
-                'Pending': '等待中',
-                'Failed': '失败',
-                'Cancelled': '已取消'
-            };
+            const statusMap = { 'Completed': '已完成', 'Indexing': '索引中', 'Pending': '等待中', 'Failed': '失败', 'Cancelled': '已取消', 'Running': '运行中' };
             return statusMap[status] || status;
         }
-
         function getTimeAgo(date) {
-            const now = new Date();
-            const diff = Math.floor((now - date) / 1000);
-            
+            const diff = Math.floor((new Date() - date) / 1000);
             if (diff < 60) return '刚刚';
-            if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
-            if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
-            return Math.floor(diff / 86400) + ' 天前';
-        }
-
-        function showCreatePresetForm() {
-            alert('自定义预设创建功能正在开发中，敬请期待！');
+            if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+            return `${Math.floor(diff / 86400)} 天前`;
         }
     </script>
 </body>

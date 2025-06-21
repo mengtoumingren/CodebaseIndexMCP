@@ -378,6 +378,54 @@ public class ConfigurationPresetService : IConfigurationPresetService
         return new ValidationResult(errors);
     }
 
+    /// <summary>
+    /// 合并多个预设配置
+    /// </summary>
+    public async Task<WatchConfigurationDto> MergePresetsAsync(List<string> presetIds)
+    {
+        var mergedConfig = new WatchConfigurationDto();
+        var filePatterns = new HashSet<string>();
+        var excludePatterns = new HashSet<string>();
+
+        if (presetIds == null || !presetIds.Any())
+        {
+            return mergedConfig;
+        }
+
+        var presets = new List<ConfigurationPreset>();
+        foreach (var id in presetIds)
+        {
+            var preset = await GetPresetByIdAsync(id);
+            if (preset != null)
+            {
+                presets.Add(preset);
+            }
+        }
+
+        foreach (var preset in presets)
+        {
+            // 合并列表并去重
+            foreach (var pattern in preset.WatchConfiguration.FilePatterns)
+            {
+                filePatterns.Add(pattern);
+            }
+            foreach (var pattern in preset.WatchConfiguration.ExcludePatterns)
+            {
+                excludePatterns.Add(pattern);
+            }
+
+            // 应用简单值（后来者覆盖）
+            mergedConfig.IncludeSubdirectories = preset.WatchConfiguration.IncludeSubdirectories;
+            mergedConfig.MaxFileSize = preset.WatchConfiguration.MaxFileSize;
+            mergedConfig.IsEnabled = preset.WatchConfiguration.IsEnabled;
+        }
+
+        mergedConfig.FilePatterns = filePatterns.ToList();
+        mergedConfig.ExcludePatterns = excludePatterns.ToList();
+
+        return mergedConfig;
+    }
+
     private void EnsurePresetsDirectoryExists()
     {
         try
@@ -439,6 +487,7 @@ public interface IConfigurationPresetService
     Task<string> ExportPresetAsync(string id);
     Task<bool> ImportPresetAsync(string json, bool overwrite = false);
     ValidationResult ValidatePreset(ConfigurationPreset preset);
+    Task<WatchConfigurationDto> MergePresetsAsync(List<string> presetIds);
 }
 
 /// <summary>

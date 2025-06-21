@@ -47,10 +47,11 @@ public sealed class IndexManagementTools
         {
             Console.WriteLine($"[INFO] 开始创建索引库，代码库路径: '{codebasePath}'");
 
-            var request = new CreateIndexLibraryRequest
+            var request = new CodebaseMcpServer.Models.Domain.CreateLibraryRequest
             {
                 CodebasePath = codebasePath,
-                Name = friendlyName
+                Name = friendlyName,
+                PresetIds = null // MCP工具暂不支持预设
             };
 
             var result = await indexLibraryService.CreateAsync(request);

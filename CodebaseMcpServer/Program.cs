@@ -16,8 +16,8 @@ using CodebaseMcpServer.Services.Configuration;
 using ModelContextProtocol.AspNetCore;
 using System.Net;
 
-HttpClient.DefaultProxy = new WebProxy();
 var builder = WebApplication.CreateBuilder(args);
+HttpClient.DefaultProxy = new WebProxy();
 
 // 添加日志配置
 builder.Logging.ClearProviders();

@@ -107,4 +107,11 @@ public class BackgroundTaskRepository : IBackgroundTaskRepository
         _logger.LogInformation("清理了 {Count} 个已完成的后台任务", affected);
         return affected;
     }
+
+    public async Task<List<BackgroundTask>> GetAllAsync()
+    {
+        var sql = "SELECT * FROM BackgroundTasks ORDER BY CreatedAt DESC";
+        var results = await _context.Connection.QueryAsync<BackgroundTask>(sql);
+        return results.ToList();
+    }
 }
