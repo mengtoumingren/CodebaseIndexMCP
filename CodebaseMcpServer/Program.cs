@@ -68,6 +68,9 @@ builder.Services.AddSingleton<ProjectTypeDetector>();
 // 注册索引库服务
 builder.Services.AddScoped<IIndexLibraryService, IndexLibraryService>();
 
+// 注册后台任务服务
+builder.Services.AddScoped<IBackgroundTaskService, BackgroundTaskService>();
+
 // 注册兼容性适配器
 builder.Services.AddScoped<IndexConfigManagerAdapter>();
 

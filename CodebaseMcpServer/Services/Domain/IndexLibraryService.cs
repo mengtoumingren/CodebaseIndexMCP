@@ -509,11 +509,3 @@ public class IndexLibraryService : IIndexLibraryService
         };
     }
 }
-
-/// <summary>
-/// 后台任务服务接口 - 暂时定义，稍后实现
-/// </summary>
-public interface IBackgroundTaskService
-{
-    Task<string> QueueIndexingTaskAsync(int libraryId, TaskPriority priority);
-}
