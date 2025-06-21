@@ -123,7 +123,8 @@ public static class JsonQueryHelper
     {
         public static string IsEnabled(string jsonColumn)
         {
-            return $"{ExtractPath(jsonColumn, "isEnabled")} = true";
+            // SQLite's JSON_EXTRACT returns a JSON boolean, which is best compared against integer 1 for TRUE.
+            return $"{ExtractPath(jsonColumn, "isEnabled")} = 1";
         }
         
         public static string ProjectType(string jsonColumn, string projectType)

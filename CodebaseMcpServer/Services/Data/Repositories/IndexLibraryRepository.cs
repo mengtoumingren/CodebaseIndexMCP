@@ -376,14 +376,45 @@ public class IndexLibraryRepository : IIndexLibraryRepository
 
     public async Task<List<IndexLibrary>> GetLibrariesForMonitoringAsync()
     {
-        var sql = $@"
-            SELECT * FROM IndexLibraries 
-            WHERE IsActive = 1 
-            AND Status IN ('Completed', 'Pending')
-            AND {JsonQueryHelper.Conditions.IsEnabled("WatchConfig")}
-            ORDER BY UpdatedAt DESC";
-            
-        var results = await _context.Connection.QueryAsync<IndexLibrary>(sql);
-        return results.ToList();
+        // 最终诊断步骤：获取所有活动库，并记录详细的反序列化过程以检查数据问题。
+        var sql = @"SELECT * FROM IndexLibraries WHERE IsActive = 1";
+        
+        _logger.LogInformation("【最终诊断】正在获取所有活动的索引库以进行监控检查...");
+        var allActiveLibraries = (await _context.Connection.QueryAsync<IndexLibrary>(sql)).ToList();
+        _logger.LogInformation("【最终诊断】获取到 {Count} 个活动的索引库。", allActiveLibraries.Count);
+
+        if (!allActiveLibraries.Any())
+        {
+            _logger.LogWarning("【最终诊断】数据库中没有任何活动的索引库 (IsActive = 1)，因此无法启动任何监控。请检查数据库。");
+            return new List<IndexLibrary>();
+        }
+
+        var librariesToWatch = new List<IndexLibrary>();
+        foreach (var library in allActiveLibraries)
+        {
+            _logger.LogDebug("【最终诊断】正在检查库: '{Name}' (ID: {Id})", library.Name, library.Id);
+            _logger.LogDebug("【最终诊断】从数据库读取的原始 WatchConfig JSON: {Json}", library.WatchConfig);
+
+            try
+            {
+                var watchConfig = library.WatchConfigObject; // 这会触发带大小写不敏感设置的反序列化
+                if (watchConfig != null && watchConfig.IsEnabled)
+                {
+                    librariesToWatch.Add(library);
+                    _logger.LogInformation("【最终诊断】✅ 库 '{Name}' (ID: {Id}) 将被监控 (IsEnabled=true)。", library.Name, library.Id);
+                }
+                else
+                {
+                    _logger.LogWarning("【最终诊断】❌ 库 '{Name}' (ID: {Id}) 已跳过。反序列化后的 IsEnabled 值为: {IsEnabledValue}。", library.Name, library.Id, watchConfig?.IsEnabled);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "【最终诊断】❌ 处理库 '{Name}' (ID: {Id}) 的 WatchConfig 时发生严重错误。请检查其JSON格式是否正确。", library.Name, library.Id);
+            }
+        }
+        
+        _logger.LogInformation("【最终诊断】检查完成。最终确定 {Count} 个索引库需要监控。", librariesToWatch.Count);
+        return librariesToWatch;
     }
 }

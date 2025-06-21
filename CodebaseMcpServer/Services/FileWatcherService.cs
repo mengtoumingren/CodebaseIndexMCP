@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
+using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Models.Domain;
 using CodebaseMcpServer.Services.Data.Repositories;
-using CodebaseMcpServer.Services.Domain;
 
 namespace CodebaseMcpServer.Services;
 
@@ -13,25 +13,50 @@ public class FileWatcherService : BackgroundService
     private readonly ILogger<FileWatcherService> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly ConcurrentDictionary<int, FileSystemWatcher> _watchers = new();
+    private readonly IndexingTaskManager _indexingTaskManager;
 
     public FileWatcherService(
         ILogger<FileWatcherService> logger,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        IndexingTaskManager indexingTaskManager)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
+        _indexingTaskManager = indexingTaskManager;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("文件监控服务启动");
 
+        // 关键修复：重新引入启动延迟以解决与数据迁移的竞态条件
+        _logger.LogInformation("文件监控服务将延迟15秒以等待应用初始化...");
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogInformation("文件监控服务在启动延迟期间被取消。");
+            return;
+        }
+
         // 定期检查新的或更新的索引库
         while (!stoppingToken.IsCancellationRequested)
         {
             await RefreshWatchersAsync(stoppingToken);
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+                break; // 退出循环
+            }
         }
+        
+        _logger.LogInformation("文件监控服务已停止。");
     }
 
     public async Task RefreshWatchersAsync(CancellationToken stoppingToken)
@@ -90,7 +115,7 @@ public class FileWatcherService : BackgroundService
                 IncludeSubdirectories = watchConfig.IncludeSubdirectories,
                 NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.DirectoryName
             };
-
+            
             // 绑定事件处理器
             watcher.Created += (s, e) => OnFileChanged(library.Id, e.FullPath, FileChangeType.Created);
             watcher.Changed += (s, e) => OnFileChanged(library.Id, e.FullPath, FileChangeType.Modified);
@@ -109,16 +134,57 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    private void OnFileChanged(int libraryId, string fullPath, FileChangeType changeType)
+    private async void OnFileChanged(int libraryId, string fullPath, Models.FileChangeType changeType)
     {
-        // TODO: 实现将文件变更事件排队到后台任务服务的逻辑
         _logger.LogInformation("检测到文件变更: LibraryId={LibraryId}, Type={ChangeType}, Path={Path}", libraryId, changeType, fullPath);
+
+        using var scope = _serviceProvider.CreateScope();
+        var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+        var library = await libraryRepository.GetByIdAsync(libraryId);
+
+        if (library == null)
+        {
+            _logger.LogWarning("处理文件变更时找不到索引库: LibraryId={LibraryId}", libraryId);
+            return;
+        }
+
+        // 可以在这里添加逻辑，检查文件是否符合被索引的模式
+        // var watchConfig = library.WatchConfigObject;
+        // if (!IsFileMatch(fullPath, watchConfig.FilePatterns, watchConfig.ExcludePatterns))
+        // {
+        //     _logger.LogDebug("文件 {Path} 不匹配索引模式，已跳过。", fullPath);
+        //     return;
+        // }
+
+        switch (changeType)
+        {
+            case Models.FileChangeType.Created:
+            case Models.FileChangeType.Modified:
+                await _indexingTaskManager.UpdateFileIndexAsync(fullPath, library.CollectionName);
+                break;
+            case Models.FileChangeType.Deleted:
+                await _indexingTaskManager.HandleFileDeletionAsync(fullPath, library.CollectionName);
+                break;
+        }
     }
 
-    private void OnFileRenamed(int libraryId, string oldFullPath, string newFullPath)
+    private async void OnFileRenamed(int libraryId, string oldFullPath, string newFullPath)
     {
-        // TODO: 实现文件重命名事件的处理
         _logger.LogInformation("检测到文件重命名: LibraryId={LibraryId}, Old={OldPath}, New={NewPath}", libraryId, oldFullPath, newFullPath);
+
+        using var scope = _serviceProvider.CreateScope();
+        var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+        var library = await libraryRepository.GetByIdAsync(libraryId);
+
+        if (library == null)
+        {
+            _logger.LogWarning("处理文件重命名时找不到索引库: LibraryId={LibraryId}", libraryId);
+            return;
+        }
+
+        // 将重命名视为一次删除和一次创建
+        await _indexingTaskManager.HandleFileDeletionAsync(oldFullPath, library.CollectionName);
+        await _indexingTaskManager.UpdateFileIndexAsync(newFullPath, library.CollectionName);
     }
 
     private void OnWatcherError(int libraryId, ErrorEventArgs e)
@@ -146,12 +212,4 @@ public class FileWatcherService : BackgroundService
         }
         base.Dispose();
     }
-}
-
-public enum FileChangeType
-{
-    Created,
-    Modified,
-    Deleted,
-    Renamed
 }

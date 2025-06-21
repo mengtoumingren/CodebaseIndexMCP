@@ -28,23 +28,23 @@ public class IndexLibrary
     
     // 运行时属性 - 不映射到数据库
     [JsonIgnore]
-    public WatchConfigurationDto WatchConfigObject 
-    { 
-        get => JsonSerializer.Deserialize<WatchConfigurationDto>(WatchConfig) ?? new();
+    public WatchConfigurationDto WatchConfigObject
+    {
+        get => JsonSerializer.Deserialize<WatchConfigurationDto>(WatchConfig, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
         set => WatchConfig = JsonSerializer.Serialize(value);
     }
     
     [JsonIgnore]
     public StatisticsDto StatisticsObject
     {
-        get => JsonSerializer.Deserialize<StatisticsDto>(Statistics) ?? new();
+        get => JsonSerializer.Deserialize<StatisticsDto>(Statistics, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
         set => Statistics = JsonSerializer.Serialize(value);
     }
     
     [JsonIgnore]
     public MetadataDto MetadataObject
     {
-        get => JsonSerializer.Deserialize<MetadataDto>(Metadata) ?? new();
+        get => JsonSerializer.Deserialize<MetadataDto>(Metadata, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
         set => Metadata = JsonSerializer.Serialize(value);
     }
 }
