@@ -208,13 +208,12 @@ public class IndexLibraryRepository : IIndexLibraryRepository
     public async Task<bool> DeleteAsync(int id)
     {
         var sql = @"
-            UPDATE IndexLibraries 
-            SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
+            DELETE FROM IndexLibraries
             WHERE Id = @Id";
             
         var affected = await _context.Connection.ExecuteAsync(sql, new { Id = id });
         
-        _logger.LogInformation("删除索引库: ID={Id}", id);
+        _logger.LogInformation("物理删除索引库: ID={Id}", id);
         return affected > 0;
     }
 
