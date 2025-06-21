@@ -1,0 +1,16 @@
+{
+  "change": {
+    "id": "0dacf47b-caeb-4a17-81ba-a936a6a66451",
+    "filePath": "d:\\VSProject\\CoodeBaseApp\\CodebaseMcpServer\\Services\\Migration\\JsonMigrationService.cs",
+    "changeType": "Modified",
+    "timestamp": "2025-06-21T09:28:07.7677609Z",
+    "collectionName": "code_index_940db5f6",
+    "status": "Failed",
+    "processedAt": null,
+    "errorMessage": "\u6587\u4EF6\u7D22\u5F15\u66F4\u65B0\u5931\u8D25",
+    "retryCount": 1,
+    "lastRetryAt": "2025-06-21T09:28:10.8330105Z"
+  },
+  "savedAt": "2025-06-21T09:28:10.833026Z",
+  "version": "1.0"
+}
