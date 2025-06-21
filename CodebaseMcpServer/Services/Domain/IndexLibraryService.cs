@@ -1,6 +1,7 @@
 using CodebaseMcpServer.Models.Domain;
 using CodebaseMcpServer.Services.Data.Repositories;
 using CodebaseMcpServer.Services.Analysis;
+using CodebaseMcpServer.Extensions;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -47,7 +48,7 @@ public class IndexLibraryService : IIndexLibraryService
             }
             
             // 2. 检查是否已存在
-            var existing = await _libraryRepository.GetByPathAsync(request.CodebasePath);
+            var existing = await _libraryRepository.GetByPathAsync(request.CodebasePath.NormalizePath());
             if (existing != null)
             {
                 return CreateIndexLibraryResult.CreateFailed("该路径已存在索引库");
@@ -113,8 +114,8 @@ public class IndexLibraryService : IIndexLibraryService
             var library = new IndexLibrary
             {
                 Name = request.Name ?? Path.GetFileName(request.CodebasePath.TrimEnd(Path.DirectorySeparatorChar)),
-                CodebasePath = Path.GetFullPath(request.CodebasePath),
-                CollectionName = GenerateCollectionName(request.CodebasePath),
+                CodebasePath = request.CodebasePath.NormalizePath(),
+                CollectionName = GenerateCollectionName(request.CodebasePath.NormalizePath()),
                 Status = IndexLibraryStatus.Pending,
                 WatchConfig = JsonSerializer.Serialize(watchConfig),
                 Statistics = JsonSerializer.Serialize(statistics),
@@ -155,7 +156,7 @@ public class IndexLibraryService : IIndexLibraryService
 
     public async Task<IndexLibrary?> GetByPathAsync(string path)
     {
-        return await _libraryRepository.GetByPathAsync(path);
+        return await _libraryRepository.GetByPathAsync(path.NormalizePath());
     }
 
     public async Task<IndexLibrary?> GetByCollectionNameAsync(string collectionName)
@@ -469,7 +470,7 @@ public class IndexLibraryService : IIndexLibraryService
     // 兼容性方法 - 用于现有MCP工具
     public async Task<CodebaseMapping?> GetLegacyMappingByPathAsync(string path)
     {
-        var library = await _libraryRepository.GetByPathAsync(path);
+        var library = await _libraryRepository.GetByPathAsync(path.NormalizePath());
         if (library == null)
             return null;
 

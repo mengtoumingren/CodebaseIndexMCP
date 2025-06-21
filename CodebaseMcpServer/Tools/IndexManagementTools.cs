@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using CodebaseMcpServer.Services;
 using CodebaseMcpServer.Extensions;
 using CodebaseMcpServer.Models;
+using CodebaseMcpServer.Services.Domain;
 
 namespace CodebaseMcpServer.Tools;
 
@@ -13,16 +14,14 @@ namespace CodebaseMcpServer.Tools;
 [McpServerToolType]
 public sealed class IndexManagementTools
 {
-    private static IndexingTaskManager? _taskManager;
-    private static IndexConfigManager? _configManager;
+    private static IServiceProvider? _serviceProvider;
     
     /// <summary>
     /// 初始化工具依赖
     /// </summary>
-    public static void Initialize(IndexingTaskManager taskManager, IndexConfigManager configManager)
+    public static void Initialize(IServiceProvider serviceProvider)
     {
-        _taskManager = taskManager;
-        _configManager = configManager;
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -36,83 +35,50 @@ public sealed class IndexManagementTools
         [Description("代码库目录的完整路径，通常是当前工作目录，例如：'d:/VSProject/MyApp' 或 'C:\\Projects\\MyProject'")] string codebasePath,
         [Description("可选的索引库友好名称，如果不提供则使用目录名")] string? friendlyName = null)
     {
+        if (_serviceProvider == null)
+        {
+            return "❌ 服务未初始化，请重启MCP服务器";
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+
         try
         {
             Console.WriteLine($"[INFO] 开始创建索引库，代码库路径: '{codebasePath}'");
+
+            var request = new CreateIndexLibraryRequest
+            {
+                CodebasePath = codebasePath,
+                Name = friendlyName
+            };
+
+            var result = await indexLibraryService.CreateAsync(request);
+
+            if (!result.IsSuccess)
+            {
+                return $"❌ 索引库创建失败: {result.Message}";
+            }
             
-            if (_taskManager == null || _configManager == null)
-            {
-                return "❌ 服务未初始化，请重启MCP服务器";
-            }
-
-            // 验证路径
-            if (string.IsNullOrWhiteSpace(codebasePath))
-            {
-                return "❌ 请提供有效的代码库路径";
-            }
-
-            // 标准化路径
-            string normalizedPath;
-            try
-            {
-                normalizedPath = Path.GetFullPath(codebasePath);
-            }
-            catch (Exception ex)
-            {
-                return $"❌ 无效的路径格式: {ex.Message}";
-            }
-
-            // 检查目录是否存在
-            if (!Directory.Exists(normalizedPath))
-            {
-                return $"❌ 指定的目录不存在: {normalizedPath}";
-            }
-
-            // 检查是否已存在索引
-            var existingMapping = _configManager.GetMappingByPath(normalizedPath);
-            if (existingMapping != null)
-            {
-                return $"❌ 该代码库已存在索引\n" +
-                       $"📁 路径: {existingMapping.CodebasePath}\n" +
-                       $"🏷️ 名称: {existingMapping.FriendlyName}\n" +
-                       $"📊 集合: {existingMapping.CollectionName}\n" +
-                       $"📅 创建时间: {existingMapping.CreatedAt:yyyy-MM-dd HH:mm:ss}\n" +
-                       $"🔍 可直接使用 SemanticCodeSearch 工具搜索此代码库";
-            }
-
-            // 生成集合名称
-            var collectionName = normalizedPath.GenerateCollectionName();
-            var finalFriendlyName = friendlyName ?? Path.GetFileName(normalizedPath.TrimEnd(Path.DirectorySeparatorChar));
-
-            Console.WriteLine($"[INFO] 生成集合名称: {collectionName}");
-            Console.WriteLine($"[INFO] 友好名称: {finalFriendlyName}");
-
-            // 启动索引任务
-            var result = await _taskManager.StartIndexingAsync(normalizedPath, finalFriendlyName);
+            var library = result.Library!;
             
-            if (!result.Success)
-            {
-                return $"❌ 索引任务启动失败: {result.Message}";
-            }
-
             // 构建成功响应
             var response = new StringBuilder();
             response.AppendLine("✅ 索引库创建任务已启动！");
             response.AppendLine();
-            response.AppendLine($"📁 代码库路径: {normalizedPath}");
-            response.AppendLine($"🏷️ 友好名称: {finalFriendlyName}");
-            response.AppendLine($"📊 集合名称: {collectionName}");
+            response.AppendLine($"📁 代码库路径: {library.CodebasePath}");
+            response.AppendLine($"🏷️ 友好名称: {library.Name}");
+            response.AppendLine($"📊 集合名称: {library.CollectionName}");
             response.AppendLine($"🆔 任务ID: {result.TaskId}");
             response.AppendLine();
             response.AppendLine("🔄 索引进度:");
-            response.AppendLine("  - 正在扫描C#文件...");
+            response.AppendLine("  - 正在扫描文件...");
             response.AppendLine("  - 正在提取代码片段...");
             response.AppendLine("  - 正在生成向量索引...");
             response.AppendLine();
             response.AppendLine("⏳ 索引完成后将自动启用以下功能:");
             response.AppendLine("  🔍 SemanticCodeSearch - 语义代码搜索");
             response.AppendLine("  👁️ 文件监控 - 自动更新索引");
-            response.AppendLine("  📄 配置保存到: codebase-indexes.json");
             response.AppendLine();
             response.AppendLine("💡 提示: 可使用 GetIndexingStatus 工具查看索引进度");
 
@@ -144,13 +110,16 @@ public sealed class IndexManagementTools
         [Description("可选的代码库路径，如果提供则查看该代码库的索引状态")] string? codebasePath = null,
         [Description("可选的任务ID，如果提供则查看特定任务状态")] string? taskId = null)
     {
+        if (_serviceProvider == null)
+        {
+            return "❌ 服务未初始化，请重启MCP服务器";
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+
         try
         {
-            if (_taskManager == null || _configManager == null)
-            {
-                return "❌ 服务未初始化，请重启MCP服务器";
-            }
-
             var response = new StringBuilder();
 
             if (!string.IsNullOrEmpty(codebasePath))
@@ -166,8 +135,8 @@ public sealed class IndexManagementTools
                     return $"❌ 无效的路径格式: {ex.Message}";
                 }
 
-                var mapping = _configManager.GetMappingByPath(normalizedPath);
-                if (mapping == null)
+                var library = await indexLibraryService.GetByPathAsync(normalizedPath);
+                if (library == null)
                 {
                     response.AppendLine($"📋 代码库索引状态");
                     response.AppendLine($"📁 路径: {normalizedPath}");
@@ -178,121 +147,47 @@ public sealed class IndexManagementTools
                 else
                 {
                     response.AppendLine($"📋 代码库索引状态");
-                    response.AppendLine($"📁 路径: {mapping.CodebasePath}");
-                    response.AppendLine($"🏷️ 名称: {mapping.FriendlyName}");
-                    response.AppendLine($"📊 集合: {mapping.CollectionName}");
-                    response.AppendLine($"📊 状态: {GetMappingStatusEmoji(mapping.IndexingStatus)} {mapping.IndexingStatus}");
-                    response.AppendLine($"📦 代码片段: {mapping.Statistics.IndexedSnippets:N0}");
-                    response.AppendLine($"📄 文件数: {mapping.Statistics.TotalFiles:N0}");
-                    response.AppendLine($"👁️ 监控状态: {(mapping.IsMonitoring ? "✅ 启用" : "⏸️ 禁用")}");
-                    response.AppendLine($"📅 创建时间: {mapping.CreatedAt:yyyy-MM-dd HH:mm:ss}");
-                    response.AppendLine($"📅 最后更新: {mapping.Statistics.LastUpdateTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
-                    
-                    // 查找相关的运行中任务
-                    var runningTasks = _taskManager.GetRunningTasks()
-                        .Where(t => Path.GetFullPath(t.CodebasePath) == normalizedPath)
-                        .ToList();
-                    
-                    if (runningTasks.Any())
-                    {
-                        response.AppendLine();
-                        response.AppendLine("🔄 运行中的任务:");
-                        foreach (var task in runningTasks)
-                        {
-                            response.AppendLine($"  📋 {task.Id[..8]}... - {task.Status} ({task.ProgressPercentage:F1}%)");
-                        }
-                    }
-                }
-            }
-            else if (!string.IsNullOrEmpty(taskId))
-            {
-                // 查询特定任务状态
-                var task = _taskManager.GetTaskStatus(taskId);
-                if (task == null)
-                {
-                    response.AppendLine($"❌ 未找到任务ID: {taskId}");
-                    response.AppendLine();
-                    response.AppendLine("💡 提示: 使用不带参数的 GetIndexingStatus 查看所有索引状态");
-                }
-                else
-                {
-                    response.AppendLine($"📋 任务状态详情 (ID: {taskId})");
-                    response.AppendLine();
-                    response.AppendLine($"📁 代码库: {task.CodebasePath}");
-                    response.AppendLine($"📊 状态: {GetStatusEmoji(task.Status)} {task.Status}");
-                    response.AppendLine($"⏱️ 开始时间: {task.StartTime:yyyy-MM-dd HH:mm:ss}");
-                    
-                    if (task.EndTime.HasValue)
-                    {
-                        response.AppendLine($"⏱️ 结束时间: {task.EndTime:yyyy-MM-dd HH:mm:ss}");
-                        response.AppendLine($"⏱️ 耗时: {(task.EndTime - task.StartTime)?.TotalSeconds:F1}秒");
-                    }
-                    
-                    response.AppendLine($"📈 进度: {task.ProgressPercentage:F1}%");
-                    
-                    if (!string.IsNullOrEmpty(task.CurrentFile))
-                    {
-                        response.AppendLine($"📄 当前: {task.CurrentFile}");
-                    }
-                    
-                    if (task.IndexedCount > 0)
-                    {
-                        response.AppendLine($"📦 已索引片段: {task.IndexedCount}");
-                    }
-                    
-                    if (!string.IsNullOrEmpty(task.ErrorMessage))
-                    {
-                        response.AppendLine($"❌ 错误信息: {task.ErrorMessage}");
-                    }
+                    response.AppendLine($"📁 路径: {library.CodebasePath}");
+                    response.AppendLine($"🏷️ 名称: {library.Name}");
+                    response.AppendLine($"📊 集合: {library.CollectionName}");
+                    response.AppendLine($"📊 状态: {GetMappingStatusEmoji(library.Status.ToString().ToLower())} {library.Status}");
+                    response.AppendLine($"📦 代码片段: {library.IndexedSnippets:N0}");
+                    response.AppendLine($"📄 文件数: {library.TotalFiles:N0}");
+                    response.AppendLine($"👁️ 监控状态: {(library.WatchConfigObject.IsEnabled ? "✅ 启用" : "⏸️ 禁用")}");
+                    response.AppendLine($"📅 创建时间: {library.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+                    response.AppendLine($"📅 最后更新: {library.LastIndexedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
                 }
             }
             else
             {
                 // 显示所有索引状态
-                var allMappings = _configManager.GetAllMappings();
-                var runningTasks = _taskManager.GetRunningTasks();
-                var statistics = await _taskManager.GetIndexingStatistics();
+                var allLibraries = await indexLibraryService.GetAllAsync();
+                var globalStats = await indexLibraryService.GetGlobalStatisticsAsync();
 
                 response.AppendLine("📊 索引库状态总览");
                 response.AppendLine();
                 
                 // 全局统计
                 response.AppendLine("🌍 全局统计:");
-                var stats = statistics as dynamic;
-                response.AppendLine($"  📁 总代码库数: {stats?.TotalCodebases ?? 0}");
-                response.AppendLine($"  ✅ 已完成索引: {stats?.CompletedIndexes ?? 0}");
-                response.AppendLine($"  ❌ 索引失败: {stats?.FailedIndexes ?? 0}");
-                response.AppendLine($"  🔄 运行中任务: {stats?.RunningTasks ?? 0}");
-                response.AppendLine($"  📦 总代码片段: {stats?.TotalSnippets ?? 0}");
-                response.AppendLine($"  📄 总文件数: {stats?.TotalFiles ?? 0}");
-                response.AppendLine($"  👁️ 监控中代码库: {stats?.MonitoredCodebases ?? 0}");
+                response.AppendLine($"  📁 总代码库数: {globalStats.TotalLibraries}");
+                response.AppendLine($"  📦 总代码片段: {globalStats.TotalIndexedSnippets:N0}");
+                response.AppendLine($"  📄 总文件数: {globalStats.TotalFiles:N0}");
                 response.AppendLine();
 
-                // 运行中的任务
-                if (runningTasks.Any())
-                {
-                    response.AppendLine("🔄 运行中的任务:");
-                    foreach (var task in runningTasks)
-                    {
-                        response.AppendLine($"  📋 {task.Id[..8]}... - {Path.GetFileName(task.CodebasePath)} ({task.ProgressPercentage:F1}%)");
-                    }
-                    response.AppendLine();
-                }
-
                 // 已建立的索引库
-                if (allMappings.Any())
+                if (allLibraries.Any())
                 {
                     response.AppendLine("📚 已建立的索引库:");
-                    foreach (var mapping in allMappings.OrderByDescending(m => m.LastIndexed ?? m.CreatedAt))
+                    foreach (var library in allLibraries.OrderByDescending(l => l.LastIndexedAt ?? l.CreatedAt))
                     {
-                        var statusEmoji = GetMappingStatusEmoji(mapping.IndexingStatus);
-                        response.AppendLine($"  {statusEmoji} {mapping.FriendlyName}");
-                        response.AppendLine($"    📁 路径: {mapping.CodebasePath}");
-                        response.AppendLine($"    📊 集合: {mapping.CollectionName}");
-                        response.AppendLine($"    📦 片段数: {mapping.Statistics.IndexedSnippets}");
-                        response.AppendLine($"    📄 文件数: {mapping.Statistics.TotalFiles}");
-                        response.AppendLine($"    👁️ 监控: {(mapping.IsMonitoring ? "启用" : "禁用")}");
-                        response.AppendLine($"    📅 最后更新: {mapping.Statistics.LastUpdateTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
+                        var statusEmoji = GetMappingStatusEmoji(library.Status.ToString());
+                        response.AppendLine($"  {statusEmoji} {library.Name}");
+                        response.AppendLine($"    📁 路径: {library.CodebasePath}");
+                        response.AppendLine($"    📊 集合: {library.CollectionName}");
+                        response.AppendLine($"    📦 片段数: {library.IndexedSnippets}");
+                        response.AppendLine($"    📄 文件数: {library.TotalFiles}");
+                        response.AppendLine($"    👁️ 监控: {(library.WatchConfigObject.IsEnabled ? "启用" : "禁用")}");
+                        response.AppendLine($"    📅 最后更新: {library.LastIndexedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未知"}");
                         response.AppendLine();
                     }
                 }
@@ -313,27 +208,16 @@ public sealed class IndexManagementTools
         }
     }
 
-    private static string GetStatusEmoji(IndexingStatus status)
-    {
-        return status switch
-        {
-            IndexingStatus.Pending => "⏳",
-            IndexingStatus.Running => "🔄",
-            IndexingStatus.Completed => "✅",
-            IndexingStatus.Failed => "❌",
-            IndexingStatus.Cancelled => "🚫",
-            _ => "❓"
-        };
-    }
-
     private static string GetMappingStatusEmoji(string status)
     {
-        return status switch
+        return status.ToLower() switch
         {
             "completed" => "✅",
             "indexing" => "🔄",
+            "running" => "🔄",
             "failed" => "❌",
             "pending" => "⏳",
+            "cancelled" => "🚫",
             _ => "❓"
         };
     }
@@ -347,25 +231,34 @@ public sealed class IndexManagementTools
     public static async Task<string> RebuildIndex(
         [Description("要重建索引的代码库路径")] string codebasePath)
     {
+        if (_serviceProvider == null)
+        {
+            return "❌ 服务未初始化，请重启MCP服务器";
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+
         try
         {
-            if (_taskManager == null || _configManager == null)
+            var library = await indexLibraryService.GetByPathAsync(codebasePath);
+            if (library == null)
             {
-                return "❌ 服务未初始化，请重启MCP服务器";
+                return $"❌ 未找到代码库: {codebasePath}";
             }
 
-            var result = await _taskManager.RebuildIndexAsync(codebasePath);
-            
-            if (result.Success)
+            var taskId = await indexLibraryService.RebuildIndexAsync(library.Id);
+
+            if (!string.IsNullOrEmpty(taskId))
             {
                 return $"✅ 索引重建任务已启动\n" +
                        $"📁 代码库: {codebasePath}\n" +
-                       $"🆔 任务ID: {result.TaskId}\n" +
+                       $"🆔 任务ID: {taskId}\n" +
                        $"💡 使用 GetIndexingStatus 工具查看进度";
             }
             else
             {
-                return $"❌ 重建索引失败: {result.Message}";
+                return $"❌ 重建索引失败";
             }
         }
         catch (Exception ex)
@@ -386,21 +279,18 @@ public sealed class IndexManagementTools
         [Description("要删除索引的代码库路径")] string codebasePath,
         [Description("确认删除标志，设为true表示确认执行删除操作")] bool confirm = false)
     {
+        if (_serviceProvider == null)
+        {
+            return "❌ 服务未初始化，请重启MCP服务器";
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+
         try
         {
             Console.WriteLine($"[INFO] 开始执行删除索引库，代码库路径: '{codebasePath}', 确认标志: {confirm}");
             
-            if (_taskManager == null || _configManager == null)
-            {
-                return "❌ 服务未初始化，请重启MCP服务器";
-            }
-
-            // 验证路径
-            if (string.IsNullOrWhiteSpace(codebasePath))
-            {
-                return "❌ 请提供有效的代码库路径";
-            }
-
             string normalizedPath;
             try
             {
@@ -411,19 +301,28 @@ public sealed class IndexManagementTools
                 return $"❌ 无效的路径格式: {ex.Message}";
             }
 
-            // 执行删除
-            var result = await _taskManager.DeleteIndexLibraryAsync(normalizedPath, confirm);
-            
-            if (result.Success || !confirm)
+            var library = await indexLibraryService.GetByPathAsync(normalizedPath);
+            if (library == null)
             {
-                // 成功删除或显示确认信息
-                Console.WriteLine($"[INFO] 删除索引库操作完成，成功: {result.Success}");
-                return result.Message;
+                return $"❌ 未找到与路径 '{normalizedPath}' 关联的索引库。";
+            }
+
+            if (!confirm)
+            {
+                return $"⚠️ 确认删除索引库 '{library.Name}'？\n" +
+                       $"此操作将永久删除集合 '{library.CollectionName}' 及其所有数据。\n" +
+                       $"要确认删除，请重新运行此命令并设置 'confirm' 参数为 true。";
+            }
+
+            var success = await indexLibraryService.DeleteAsync(library.Id);
+
+            if (success)
+            {
+                return $"✅ 成功删除索引库 '{library.Name}'。";
             }
             else
             {
-                Console.WriteLine($"[ERROR] 删除索引库失败: {result.Message}");
-                return result.Message;
+                return $"❌ 删除索引库 '{library.Name}' 失败。请检查日志获取详细信息。";
             }
         }
         catch (Exception ex)
@@ -442,13 +341,10 @@ public sealed class IndexManagementTools
                    $"🔧 请检查:\n" +
                    $"1. 代码库路径是否正确: {codebasePath}\n" +
                    $"2. Qdrant 服务是否正常运行\n" +
-                   $"3. 配置文件访问权限是否正常\n" +
-                   $"4. 任务持久化目录是否可写\n\n" +
+                   $"3. 数据库连接是否正常\n\n" +
                    $"🛠️ 故障排除:\n" +
                    $"💡 使用 GetIndexingStatus 工具查看索引库状态\n" +
-                   $"🔍 检查服务器日志获取详细错误信息\n" +
-                   $"🔄 如果部分删除成功，可能需要手动清理残留数据\n\n" +
-                   $"⚡ 提示: DeleteIndexLibrary 提供安全的索引库完整删除功能";
+                   $"🔍 检查服务器日志获取详细错误信息";
         }
     }
 }

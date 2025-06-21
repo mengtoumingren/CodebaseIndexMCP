@@ -3,6 +3,7 @@ using System.Text;
 using ModelContextProtocol.Server;
 using CodebaseMcpServer.Services;
 using CodebaseMcpServer.Extensions;
+using CodebaseMcpServer.Services.Domain;
 
 namespace CodebaseMcpServer.Tools;
 
@@ -12,16 +13,14 @@ namespace CodebaseMcpServer.Tools;
 [McpServerToolType]
 public sealed class CodeSearchTools
 {
-    private static EnhancedCodeSemanticSearch? _searchService;
-    private static IndexConfigManager? _configManager;
+    private static IServiceProvider? _serviceProvider;
     
     /// <summary>
     /// 初始化工具依赖
     /// </summary>
-    public static void Initialize(EnhancedCodeSemanticSearch searchService, IndexConfigManager configManager)
+    public static void Initialize(IServiceProvider serviceProvider)
     {
-        _searchService = searchService;
-        _configManager = configManager;
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -37,15 +36,19 @@ public sealed class CodeSearchTools
         [Description("📁 代码库路径 - 要搜索的代码库根目录路径。通常使用当前工作目录。支持格式：'d:/VSProject/MyApp'、'C:\\Projects\\MyProject'、'./src'等。系统会自动标准化路径格式。")] string codebasePath,
         [Description("📊 结果数量限制 - 返回最相关的代码片段数量，默认5个。建议：快速查找用5-10个，详细分析用15-20个，全面了解用25-30个。")] int limit = 5)
     {
+        if (_serviceProvider == null)
+        {
+            return "❌ 服务未初始化，请重启MCP服务器";
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var searchService = scope.ServiceProvider.GetRequiredService<EnhancedCodeSemanticSearch>();
+        var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+
         try
         {
             Console.WriteLine($"[INFO] 开始执行多集合语义搜索，查询: '{query}', 代码库: '{codebasePath}'");
             
-            if (_searchService == null || _configManager == null)
-            {
-                return "❌ 服务未初始化，请重启MCP服务器";
-            }
-
             // 验证参数
             if (string.IsNullOrWhiteSpace(query))
             {
@@ -69,7 +72,7 @@ public sealed class CodeSearchTools
             }
 
             // 从配置中获取对应的集合名称（支持父目录回退）
-            var mapping = _configManager.GetMappingByPathWithParentFallback(normalizedPath);
+            var mapping = await indexLibraryService.GetLegacyMappingByPathAsync(normalizedPath);
             if (mapping == null)
             {
                 return $"📋 代码库未建立索引\n" +
@@ -106,7 +109,7 @@ public sealed class CodeSearchTools
             }
             
             // 执行搜索
-            var results = await _searchService.SearchAsync(query, mapping.CollectionName, limit);
+            var results = await searchService.SearchAsync(query, mapping.CollectionName, limit);
             
             if (!results.Any())
             {

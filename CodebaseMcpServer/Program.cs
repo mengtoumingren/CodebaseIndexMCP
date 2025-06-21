@@ -210,13 +210,10 @@ catch (Exception ex)
 
 // 初始化工具依赖
 var serviceProvider = app.Services;
-var configManager = serviceProvider.GetRequiredService<IndexConfigManager>();
-var searchService = serviceProvider.GetRequiredService<EnhancedCodeSemanticSearch>();
-var taskManager = serviceProvider.GetRequiredService<IndexingTaskManager>();
 
 // 初始化MCP工具
-CodeSearchTools.Initialize(searchService, configManager);
-IndexManagementTools.Initialize(taskManager, configManager);
+CodeSearchTools.Initialize(serviceProvider);
+IndexManagementTools.Initialize(serviceProvider);
 
 app.MapMcp();
 
@@ -307,10 +304,10 @@ Console.WriteLine("==========================================");
 try
 {
     using var scope = app.Services.CreateScope();
-    var indexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
+    var scopedIndexLibraryService = scope.ServiceProvider.GetRequiredService<IIndexLibraryService>();
     var presetService = scope.ServiceProvider.GetRequiredService<IConfigurationPresetService>();
     
-    var libraries = await indexLibraryService.GetAllAsync();
+    var libraries = await scopedIndexLibraryService.GetAllAsync();
     var allPresets = await presetService.GetAllPresetsAsync();
     var builtInPresets = allPresets.Where(p => p.IsBuiltIn).ToList();
     var customPresets = allPresets.Where(p => !p.IsBuiltIn).ToList();
@@ -331,7 +328,7 @@ try
     }
     
     // 显示项目类型分布
-    var typeDistribution = await indexLibraryService.GetProjectTypeDistributionAsync();
+    var typeDistribution = await scopedIndexLibraryService.GetProjectTypeDistributionAsync();
     if (typeDistribution.Any())
     {
         Console.WriteLine("🏷️  项目类型分布:");
