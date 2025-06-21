@@ -12,7 +12,6 @@ using CodebaseMcpServer.Services.Data.Repositories;
 using CodebaseMcpServer.Services.Migration;
 using CodebaseMcpServer.Services.Domain;
 using CodebaseMcpServer.Services.Analysis;
-using CodebaseMcpServer.Services.Compatibility;
 using CodebaseMcpServer.Services.Configuration;
 using ModelContextProtocol.AspNetCore;
 using System.Net;
@@ -73,8 +72,6 @@ builder.Services.AddScoped<IIndexLibraryService, IndexLibraryService>();
 builder.Services.AddSingleton<IBackgroundTaskService, BackgroundTaskService>();
 builder.Services.AddHostedService(provider => (BackgroundTaskService)provider.GetRequiredService<IBackgroundTaskService>());
 
-// 注册兼容性适配器
-builder.Services.AddScoped<IndexConfigManagerAdapter>();
 
 // =============== 配置管理服务层 ===============
 // 注册配置预设服务
@@ -87,14 +84,6 @@ builder.Services.AddScoped<IConfigurationValidationService, ConfigurationValidat
 builder.Services.AddScoped<IConfigurationManagementService, ConfigurationManagementService>();
 
 // =============== 保留现有服务配置 ===============
-// 注册核心服务 - 使用兼容性适配器
-builder.Services.AddSingleton<IndexConfigManager>(serviceProvider =>
-{
-    // 代理类将使用 IServiceProvider 来动态解析作用域服务
-    var logger = serviceProvider.GetRequiredService<ILogger<IndexConfigManager>>();
-    return new IndexConfigManagerProxy(serviceProvider, logger);
-});
-
 builder.Services.AddSingleton<TaskPersistenceService>();
 builder.Services.AddSingleton<QdrantConnectionMonitor>();
 
@@ -112,7 +101,6 @@ builder.Services.AddSingleton<EmbeddingProviderFactory>();
 builder.Services.AddSingleton<EnhancedCodeSemanticSearch>();
 
 // 注册核心服务（移除循环依赖）
-builder.Services.AddSingleton<IndexingTaskManager>();
 builder.Services.AddSingleton<FileChangePersistenceService>();
 builder.Services.AddSingleton<FileWatcherService>();
 builder.Services.AddHostedService<FileWatcherService>(provider => provider.GetRequiredService<FileWatcherService>());
@@ -385,95 +373,3 @@ Console.WriteLine("==========================================");
 Console.WriteLine();
 
 app.Run();
-
-/// <summary>
-/// IndexConfigManager代理类 - 内部使用适配器实现兼容性
-/// </summary>
-public class IndexConfigManagerProxy : IndexConfigManager
-{
-    private readonly IServiceProvider _serviceProvider;
-
-    public IndexConfigManagerProxy(IServiceProvider serviceProvider, ILogger<IndexConfigManager> logger)
-        : base(logger)
-    {
-        _serviceProvider = serviceProvider;
-    }
-
-    // 重写关键方法，在独立作用域内解析适配器并委托调用
-    public new async Task<bool> AddCodebaseMapping(CodebaseMcpServer.Services.Domain.CodebaseMapping mapping)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.AddCodebaseMapping(mapping);
-    }
-
-    public new CodebaseMcpServer.Services.Domain.CodebaseMapping? GetMappingByPath(string path)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return adapter.GetMappingByPath(path);
-    }
-
-    public new CodebaseMcpServer.Services.Domain.CodebaseMapping? GetMappingByPathWithParentFallback(string path)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return adapter.GetMappingByPathWithParentFallback(path);
-    }
-
-    public new CodebaseMcpServer.Services.Domain.CodebaseMapping? GetMappingByCollection(string collectionName)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return adapter.GetMappingByCollection(collectionName);
-    }
-
-    public new async Task<bool> UpdateMapping(CodebaseMcpServer.Services.Domain.CodebaseMapping updatedMapping)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.UpdateMapping(updatedMapping);
-    }
-
-    public new async Task<bool> RemoveMapping(string id)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.RemoveMapping(id);
-    }
-
-    public new async Task<bool> RemoveMappingByPath(string codebasePath)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.RemoveMappingByPath(codebasePath);
-    }
-
-    public new List<CodebaseMcpServer.Services.Domain.CodebaseMapping> GetAllMappings()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return adapter.GetAllMappings();
-    }
-
-    public new List<CodebaseMcpServer.Services.Domain.CodebaseMapping> GetMonitoredMappings()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return adapter.GetMonitoredMappings();
-    }
-
-    public new async Task<CodebaseMcpServer.Models.IndexConfiguration> GetConfiguration()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.GetConfiguration();
-    }
-
-    public new async Task<bool> UpdateMappingStatistics(string id, Action<CodebaseMcpServer.Services.Domain.IndexStatistics> updateAction)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var adapter = scope.ServiceProvider.GetRequiredService<IndexConfigManagerAdapter>();
-        return await adapter.UpdateMappingStatistics(id, updateAction);
-    }
-}

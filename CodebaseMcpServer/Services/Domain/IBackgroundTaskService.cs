@@ -14,5 +14,15 @@ namespace CodebaseMcpServer.Services.Domain
         /// <param name="priority">任务优先级</param>
         /// <returns>表示任务的唯一ID</returns>
         Task<string> QueueIndexingTaskAsync(int libraryId, TaskPriority priority);
+
+        /// <summary>
+        /// 将文件更新任务排队
+        /// </summary>
+        Task<string> QueueFileUpdateTaskAsync(int libraryId, string filePath, TaskPriority priority = TaskPriority.High);
+
+        /// <summary>
+        /// 将文件删除任务排队
+        /// </summary>
+        Task<string> QueueFileDeleteTaskAsync(int libraryId, string filePath, TaskPriority priority = TaskPriority.High);
     }
 }

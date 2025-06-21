@@ -56,6 +56,48 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
         return createdTask.TaskId;
     }
 
+    public async Task<string> QueueFileUpdateTaskAsync(int libraryId, string filePath, TaskPriority priority)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IBackgroundTaskRepository>();
+
+        var task = new BackgroundTask
+        {
+            Type = BackgroundTaskType.FileUpdate,
+            LibraryId = libraryId,
+            FilePath = filePath,
+            Status = BackgroundTaskStatus.Pending,
+            Priority = priority
+        };
+
+        var createdTask = await repository.CreateAsync(task);
+        await _taskQueue.Writer.WriteAsync(createdTask.Id);
+        
+        _logger.LogInformation("文件更新任务已排队: TaskId={TaskId}, LibraryId={LibraryId}, File={FilePath}", createdTask.TaskId, libraryId, filePath);
+        return createdTask.TaskId;
+    }
+
+    public async Task<string> QueueFileDeleteTaskAsync(int libraryId, string filePath, TaskPriority priority)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IBackgroundTaskRepository>();
+
+        var task = new BackgroundTask
+        {
+            Type = BackgroundTaskType.FileDelete,
+            LibraryId = libraryId,
+            FilePath = filePath,
+            Status = BackgroundTaskStatus.Pending,
+            Priority = priority
+        };
+
+        var createdTask = await repository.CreateAsync(task);
+        await _taskQueue.Writer.WriteAsync(createdTask.Id);
+        
+        _logger.LogInformation("文件删除任务已排队: TaskId={TaskId}, LibraryId={LibraryId}, File={FilePath}", createdTask.TaskId, libraryId, filePath);
+        return createdTask.TaskId;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("后台任务服务已启动，最大并发数: {MaxConcurrency}", _concurrencySettings.MaxConcurrentTasks);
@@ -127,7 +169,8 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
             success = task.Type switch
             {
                 BackgroundTaskType.Indexing => await ProcessIndexingTaskAsync(scope, task, stoppingToken),
-                // 其他任务类型可以在这里添加
+                BackgroundTaskType.FileUpdate => await ProcessFileUpdateTaskAsync(scope, task, stoppingToken),
+                BackgroundTaskType.FileDelete => await ProcessFileDeleteTaskAsync(scope, task, stoppingToken),
                 _ => throw new NotSupportedException($"不支持的任务类型: {task.Type}")
             };
             
@@ -240,6 +283,98 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
             await libraryRepository.UpdateAsync(library);
             task.ErrorMessage = ex.Message;
             _logger.LogError(ex, "索引任务执行失败: LibraryId={LibraryId}", library.Id);
+            return false;
+        }
+    }
+
+    private async Task<bool> ProcessFileUpdateTaskAsync(IServiceScope scope, BackgroundTask task, CancellationToken stoppingToken)
+    {
+        if (!task.LibraryId.HasValue || string.IsNullOrEmpty(task.FilePath))
+        {
+            task.ErrorMessage = "任务缺少 LibraryId 或 FilePath";
+            return false;
+        }
+
+        var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+        var searchService = scope.ServiceProvider.GetRequiredService<EnhancedCodeSemanticSearch>();
+        
+        var library = await libraryRepository.GetByIdAsync(task.LibraryId.Value);
+        if (library == null)
+        {
+            task.ErrorMessage = $"找不到索引库: {task.LibraryId.Value}";
+            return false;
+        }
+
+        try
+        {
+            _logger.LogInformation("开始处理文件更新: Library={LibraryName}, File={FilePath}", library.Name, task.FilePath);
+            
+            // 逻辑从 IndexingTaskManager.UpdateFileIndexAsync 迁移而来
+            await searchService.DeleteFileIndexAsync(task.FilePath, library.CollectionName);
+            var snippets = searchService.ExtractCodeSnippets(task.FilePath);
+            if (snippets.Any())
+            {
+                await searchService.BatchIndexSnippetsAsync(snippets, library.CollectionName);
+                _logger.LogInformation("文件索引更新完成: {FilePath}, 片段数: {Count}", task.FilePath, snippets.Count);
+            }
+            else
+            {
+                _logger.LogInformation("文件 {FilePath} 没有提取到代码片段，仅删除旧索引。", task.FilePath);
+            }
+
+            // TODO: 更新 FileIndexDetails (如果需要)
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            task.ErrorMessage = ex.Message;
+            _logger.LogError(ex, "文件更新任务失败: LibraryId={LibraryId}, File={FilePath}", library.Id, task.FilePath);
+            return false;
+        }
+    }
+
+    private async Task<bool> ProcessFileDeleteTaskAsync(IServiceScope scope, BackgroundTask task, CancellationToken stoppingToken)
+    {
+        if (!task.LibraryId.HasValue || string.IsNullOrEmpty(task.FilePath))
+        {
+            task.ErrorMessage = "任务缺少 LibraryId 或 FilePath";
+            return false;
+        }
+
+        var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+        var searchService = scope.ServiceProvider.GetRequiredService<EnhancedCodeSemanticSearch>();
+
+        var library = await libraryRepository.GetByIdAsync(task.LibraryId.Value);
+        if (library == null)
+        {
+            task.ErrorMessage = $"找不到索引库: {task.LibraryId.Value}";
+            return false;
+        }
+
+        try
+        {
+            _logger.LogInformation("开始处理文件删除: Library={LibraryName}, File={FilePath}", library.Name, task.FilePath);
+            
+            // 逻辑从 IndexingTaskManager.HandleFileDeletionAsync 迁移而来
+            var success = await searchService.DeleteFileIndexAsync(task.FilePath, library.CollectionName);
+            if (success)
+            {
+                _logger.LogInformation("文件索引删除成功: {FilePath}", task.FilePath);
+            }
+            else
+            {
+                _logger.LogWarning("文件索引删除失败: {FilePath}", task.FilePath);
+            }
+
+            // TODO: 更新 FileIndexDetails (如果需要)
+
+            return success;
+        }
+        catch (Exception ex)
+        {
+            task.ErrorMessage = ex.Message;
+            _logger.LogError(ex, "文件删除任务失败: LibraryId={LibraryId}, File={FilePath}", library.Id, task.FilePath);
             return false;
         }
     }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Models.Domain;
+using CodebaseMcpServer.Services.Domain;
 using CodebaseMcpServer.Services.Data.Repositories;
 
 namespace CodebaseMcpServer.Services;
@@ -13,16 +14,16 @@ public class FileWatcherService : BackgroundService
     private readonly ILogger<FileWatcherService> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly ConcurrentDictionary<int, FileSystemWatcher> _watchers = new();
-    private readonly IndexingTaskManager _indexingTaskManager;
+    private readonly IBackgroundTaskService _backgroundTaskService;
 
     public FileWatcherService(
         ILogger<FileWatcherService> logger,
         IServiceProvider serviceProvider,
-        IndexingTaskManager indexingTaskManager)
+        IBackgroundTaskService backgroundTaskService)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
-        _indexingTaskManager = indexingTaskManager;
+        _backgroundTaskService = backgroundTaskService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -160,10 +161,10 @@ public class FileWatcherService : BackgroundService
         {
             case Models.FileChangeType.Created:
             case Models.FileChangeType.Modified:
-                await _indexingTaskManager.UpdateFileIndexAsync(fullPath, library.CollectionName);
+                await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, fullPath);
                 break;
             case Models.FileChangeType.Deleted:
-                await _indexingTaskManager.HandleFileDeletionAsync(fullPath, library.CollectionName);
+                await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, fullPath);
                 break;
         }
     }
@@ -183,8 +184,8 @@ public class FileWatcherService : BackgroundService
         }
 
         // 将重命名视为一次删除和一次创建
-        await _indexingTaskManager.HandleFileDeletionAsync(oldFullPath, library.CollectionName);
-        await _indexingTaskManager.UpdateFileIndexAsync(newFullPath, library.CollectionName);
+        await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
+        await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, newFullPath);
     }
 
     private void OnWatcherError(int libraryId, ErrorEventArgs e)

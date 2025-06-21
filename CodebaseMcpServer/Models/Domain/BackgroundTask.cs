@@ -13,6 +13,7 @@ public class BackgroundTask
     public int? LibraryId { get; set; }
     public BackgroundTaskStatus Status { get; set; } = BackgroundTaskStatus.Pending;
     public int Progress { get; set; }
+    public string? FilePath { get; set; } // 新增，用于存储变更的文件路径
     public string? CurrentFile { get; set; }
     public string TaskConfig { get; set; } = "{}";
     public string TaskResult { get; set; } = "{}";
@@ -33,6 +34,7 @@ public enum BackgroundTaskType
     Indexing,
     Rebuilding,
     FileUpdate,
+    FileDelete,
     WatcherRestart,
     SystemMaintenance
 }
