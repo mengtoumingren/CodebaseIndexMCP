@@ -122,17 +122,6 @@ public class CustomFilterRequest
 }
 
 /// <summary>
-/// 任务优先级
-/// </summary>
-public enum TaskPriority
-{
-    Low = 1,
-    Normal = 2,
-    High = 3,
-    Critical = 4
-}
-
-/// <summary>
 /// 索引统计DTO
 /// </summary>
 public class IndexStatisticsDto

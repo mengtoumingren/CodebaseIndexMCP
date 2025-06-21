@@ -57,6 +57,7 @@ builder.Services.AddSingleton<DatabaseContext>();
 
 // 注册Repository
 builder.Services.AddScoped<IIndexLibraryRepository, IndexLibraryRepository>();
+builder.Services.AddScoped<IBackgroundTaskRepository, BackgroundTaskRepository>();
 
 // 注册迁移服务
 builder.Services.AddScoped<IJsonMigrationService, JsonMigrationService>();

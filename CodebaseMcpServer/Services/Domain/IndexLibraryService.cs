@@ -15,6 +15,7 @@ public class IndexLibraryService : IIndexLibraryService
     private readonly IIndexLibraryRepository _libraryRepository;
     private readonly ProjectTypeDetector _projectDetector;
     private readonly ILogger<IndexLibraryService> _logger;
+    private readonly EnhancedCodeSemanticSearch _searchService;
     
     // 注入后台任务服务接口，稍后实现
     private readonly IBackgroundTaskService? _backgroundTaskService;
@@ -23,11 +24,13 @@ public class IndexLibraryService : IIndexLibraryService
         IIndexLibraryRepository libraryRepository,
         ProjectTypeDetector projectDetector,
         ILogger<IndexLibraryService> logger,
+        EnhancedCodeSemanticSearch searchService,
         IBackgroundTaskService? backgroundTaskService = null)
     {
         _libraryRepository = libraryRepository;
         _projectDetector = projectDetector;
         _logger = logger;
+        _searchService = searchService;
         _backgroundTaskService = backgroundTaskService;
     }
 
@@ -180,7 +183,9 @@ public class IndexLibraryService : IIndexLibraryService
                 return false;
             }
 
-            // TODO: 这里应该清理Qdrant中的数据
+            // 清理Qdrant中的数据
+            await _searchService.DeleteCollectionAsync(library.CollectionName);
+            
             _logger.LogInformation("删除索引库: {LibraryId} ({Name})", id, library.Name);
             
             return await _libraryRepository.DeleteAsync(id);

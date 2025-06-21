@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Extensions;
+using CodebaseMcpServer.Services.Data.Repositories;
 
 namespace CodebaseMcpServer.Services;
 
@@ -505,8 +506,14 @@ public class IndexingTaskManager
             try
             {
                 var fileWatcherService = GetFileWatcherService();
-                var watcherCreated = await fileWatcherService.CreateWatcher(mapping);
-                if (watcherCreated)
+                using var scope = _serviceProvider.CreateScope();
+                var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+                var library = await libraryRepository.GetByPathAsync(mapping.CodebasePath);
+                if (library != null)
+                {
+                    fileWatcherService.CreateWatcher(library);
+                }
+                if (true)
                 {
                     _logger.LogInformation("索引完成后已自动启动文件监控: {FriendlyName} -> {CollectionName}",
                         mapping.FriendlyName, mapping.CollectionName);
@@ -1215,15 +1222,27 @@ public class IndexingTaskManager
             // 2. 停止文件监控
             try
             {
-                var fileWatcherService = GetFileWatcherService();
-                var stopResult = fileWatcherService.StopWatcher(mapping.Id);
-                if (stopResult)
+                using var scope = _serviceProvider.CreateScope();
+                var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
+                var library = await libraryRepository.GetByPathAsync(mapping.CodebasePath);
+
+                if (library != null)
                 {
-                    steps.Add("✅ 停止文件监控服务");
+                    var fileWatcherService = GetFileWatcherService();
+                    var stopResult = fileWatcherService.StopWatcher(library.Id);
+                    if (stopResult)
+                    {
+                        steps.Add("✅ 停止文件监控服务");
+                    }
+                    else
+                    {
+                        steps.Add("⚠️ 文件监控服务停止失败（可能未启动）");
+                        hasErrors = true;
+                    }
                 }
                 else
                 {
-                    steps.Add("⚠️ 文件监控服务停止失败（可能未启动）");
+                    steps.Add("⚠️ 找不到对应的索引库，无法停止监控");
                     hasErrors = true;
                 }
             }

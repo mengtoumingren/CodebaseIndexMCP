@@ -59,13 +59,7 @@ public class IndexLibraryRepository : IIndexLibraryRepository
             SELECT * FROM IndexLibraries 
             WHERE Id = @Id AND IsActive = 1";
         
-        var result = await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql, new { Id = id });
-        if (result != null)
-        {
-            result.Status = Enum.Parse<IndexLibraryStatus>(await _context.Connection.QuerySingleAsync<string>(
-                "SELECT Status FROM IndexLibraries WHERE Id = @Id", new { Id = id }));
-        }
-        return result;
+        return await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql, new { Id = id });
     }
 
     public async Task<IndexLibrary?> GetByPathAsync(string codebasePath)
@@ -74,15 +68,8 @@ public class IndexLibraryRepository : IIndexLibraryRepository
             SELECT * FROM IndexLibraries 
             WHERE CodebasePath = @CodebasePath AND IsActive = 1";
         
-        var result = await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql, 
+        return await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql,
             new { CodebasePath = codebasePath });
-        
-        if (result != null)
-        {
-            result.Status = Enum.Parse<IndexLibraryStatus>(await _context.Connection.QuerySingleAsync<string>(
-                "SELECT Status FROM IndexLibraries WHERE Id = @Id", new { Id = result.Id }));
-        }
-        return result;
     }
 
     public async Task<IndexLibrary?> GetByCollectionNameAsync(string collectionName)
@@ -91,15 +78,8 @@ public class IndexLibraryRepository : IIndexLibraryRepository
             SELECT * FROM IndexLibraries 
             WHERE CollectionName = @CollectionName AND IsActive = 1";
         
-        var result = await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql, 
+        return await _context.Connection.QueryFirstOrDefaultAsync<IndexLibrary>(sql,
             new { CollectionName = collectionName });
-        
-        if (result != null)
-        {
-            result.Status = Enum.Parse<IndexLibraryStatus>(await _context.Connection.QuerySingleAsync<string>(
-                "SELECT Status FROM IndexLibraries WHERE Id = @Id", new { Id = result.Id }));
-        }
-        return result;
     }
 
     public async Task<List<IndexLibrary>> GetAllAsync()
@@ -110,16 +90,7 @@ public class IndexLibraryRepository : IIndexLibraryRepository
             ORDER BY UpdatedAt DESC";
         
         var results = await _context.Connection.QueryAsync<IndexLibrary>(sql);
-        var libraries = results.ToList();
-        
-        // 设置枚举状态
-        foreach (var library in libraries)
-        {
-            library.Status = Enum.Parse<IndexLibraryStatus>(await _context.Connection.QuerySingleAsync<string>(
-                "SELECT Status FROM IndexLibraries WHERE Id = @Id", new { Id = library.Id }));
-        }
-        
-        return libraries;
+        return results.ToList();
     }
 
     public async Task<List<IndexLibrary>> GetEnabledLibrariesAsync()

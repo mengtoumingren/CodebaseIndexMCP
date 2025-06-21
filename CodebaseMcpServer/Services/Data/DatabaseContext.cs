@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using System.Data;
+using System.Data.Common;
 using Dapper;
 
 namespace CodebaseMcpServer.Services.Data;
@@ -11,7 +12,7 @@ public class DatabaseContext : IDisposable
 {
     private readonly IDbConnection _connection;
     private readonly ILogger<DatabaseContext> _logger;
-    private IDbTransaction? _transaction;
+    private DbTransaction? _transaction;
 
     public DatabaseContext(IConfiguration configuration, ILogger<DatabaseContext> logger)
     {
@@ -54,6 +55,7 @@ public class DatabaseContext : IDisposable
         try
         {
             await CreateTablesAsync();
+            await MigrateTablesAsync();
             await CreateIndexesAsync();
             _logger.LogInformation("数据库初始化完成");
         }
@@ -130,6 +132,7 @@ public class DatabaseContext : IDisposable
                 CompletedAt DATETIME,
                 CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                Priority INTEGER DEFAULT 2,
                 
                 FOREIGN KEY (LibraryId) REFERENCES IndexLibraries(Id) ON DELETE SET NULL
             );
@@ -199,32 +202,52 @@ public class DatabaseContext : IDisposable
         await _connection.ExecuteAsync(createIndexesSql);
     }
 
-    public async Task<IDbTransaction> BeginTransactionAsync()
+    private async Task MigrateTablesAsync()
     {
-        _transaction = _connection.BeginTransaction();
+        await AddColumnIfNotExistsAsync("BackgroundTasks", "Priority", "INTEGER DEFAULT 2");
+    }
+
+    private async Task AddColumnIfNotExistsAsync(string tableName, string columnName, string columnDefinition)
+    {
+        var columns = await _connection.QueryAsync($"PRAGMA table_info({tableName})");
+        if (columns.All(c => ((string)c.name).ToLower() != columnName.ToLower()))
+        {
+            _logger.LogInformation("为表 {TableName} 添加新列 {ColumnName}...", tableName, columnName);
+            await _connection.ExecuteAsync($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition}");
+            _logger.LogInformation("列 {ColumnName} 添加成功", columnName);
+        }
+    }
+
+    public async Task<DbTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        if (_connection is SqliteConnection sqliteConnection)
+        {
+            _transaction = await sqliteConnection.BeginTransactionAsync(cancellationToken);
+            return _transaction;
+        }
+        
+        _transaction = (DbTransaction)_connection.BeginTransaction();
         return _transaction;
     }
 
-    public async Task CommitAsync()
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         if (_transaction != null)
         {
-            _transaction.Commit();
-            _transaction.Dispose();
+            await _transaction.CommitAsync(cancellationToken);
+            await _transaction.DisposeAsync();
             _transaction = null;
         }
-        await Task.CompletedTask;
     }
 
-    public async Task RollbackAsync()
+    public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
         if (_transaction != null)
         {
-            _transaction.Rollback();
-            _transaction.Dispose();
+            await _transaction.RollbackAsync(cancellationToken);
+            await _transaction.DisposeAsync();
             _transaction = null;
         }
-        await Task.CompletedTask;
     }
 
     public void Dispose()

@@ -7,6 +7,17 @@ namespace CodebaseMcpServer.Models;
 /// </summary>
 public class ConcurrencySettings
 {
+/// &lt;summary&gt;
+    /// 最大并发后台任务数
+    /// &lt;/summary&gt;
+    [Range(1, 50)]
+    public int MaxConcurrentTasks { get; set; } = 5;
+
+    /// &lt;summary&gt;
+    /// 最大排队任务数
+    /// &lt;/summary&gt;
+    [Range(100, 10000)]
+    public int MaxQueuedTasks { get; set; } = 1000;
     /// <summary>
     /// 最大并发嵌入向量请求数
     /// </summary>
