@@ -52,7 +52,7 @@ builder.Services.AddCors(options =>
 
 // =============== SQLite + JSON 数据层配置 ===============
 // 注册数据库上下文
-builder.Services.AddSingleton<DatabaseContext>();
+builder.Services.AddScoped<DatabaseContext>();
 
 // 注册Repository
 builder.Services.AddScoped<IIndexLibraryRepository, IndexLibraryRepository>();

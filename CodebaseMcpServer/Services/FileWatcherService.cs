@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Models.Domain;
 using CodebaseMcpServer.Services.Domain;
@@ -137,6 +138,13 @@ public class FileWatcherService : BackgroundService
 
     private async void OnFileChanged(int libraryId, string fullPath, Models.FileChangeType changeType)
     {
+          // 排除数据库文件
+        var fileName = Path.GetFileName(fullPath);
+        if (fileName.Contains("codebase-app.db"))
+        {
+            _logger.LogDebug("数据库文件变更，已跳过: {Path}", fullPath);
+            return;
+        }
         _logger.LogInformation("检测到文件变更: LibraryId={LibraryId}, Type={ChangeType}, Path={Path}", libraryId, changeType, fullPath);
 
         using var scope = _serviceProvider.CreateScope();
@@ -180,6 +188,15 @@ public class FileWatcherService : BackgroundService
         if (library == null)
         {
             _logger.LogWarning("处理文件重命名时找不到索引库: LibraryId={LibraryId}", libraryId);
+            return;
+        }
+        // 排除数据库文件
+        var oldFileName = Path.GetFileName(oldFullPath);
+
+        var newFileName = Path.GetFileName(newFullPath);
+        if (oldFileName.Contains("codebase-app.db") || newFileName.Contains("codebase-app.db"))
+        {
+            _logger.LogDebug("数据库文件重命名，已跳过: Old={OldPath}, New={NewPath}", oldFullPath, newFullPath);
             return;
         }
 
