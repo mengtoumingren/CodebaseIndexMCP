@@ -254,3 +254,4 @@ paket-files/
 /WorkFlowCore/publish.bat
 WorkFlowCore/WorkFlowCore.BusinessDemo.Web/BusinessDemo.db
 WorkFlowCore/WorkFlowCore.BusinessDemo.Web/BusinessDemo.db-wal
+CodebaseMcpServer/file-changes-storage
