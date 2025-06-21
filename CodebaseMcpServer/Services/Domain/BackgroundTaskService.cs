@@ -60,15 +60,21 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _logger.LogDebug("后台任务循环正在等待任务...");
             try
             {
                 await _taskQueue.Reader.WaitToReadAsync(stoppingToken);
+                _logger.LogDebug("任务队列中有新项目");
+
                 var taskId = await _taskQueue.Reader.ReadAsync(stoppingToken);
+                _logger.LogDebug("已从队列中读取任务ID: {TaskId}", taskId);
 
                 await semaphore.WaitAsync(stoppingToken);
+                _logger.LogDebug("已获取信号量，准备处理任务: {TaskId}", taskId);
 
                 _ = Task.Run(async () =>
                 {
+                    _logger.LogDebug("启动新线程处理任务: {TaskId}", taskId);
                     try
                     {
                         await ProcessTaskAsync(taskId, stoppingToken);
@@ -76,6 +82,7 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
                     finally
                     {
                         semaphore.Release();
+                        _logger.LogDebug("已释放信号量，任务完成: {TaskId}", taskId);
                     }
                 }, stoppingToken);
             }

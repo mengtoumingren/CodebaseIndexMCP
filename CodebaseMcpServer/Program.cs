@@ -70,7 +70,8 @@ builder.Services.AddSingleton<ProjectTypeDetector>();
 builder.Services.AddScoped<IIndexLibraryService, IndexLibraryService>();
 
 // 注册后台任务服务
-builder.Services.AddScoped<IBackgroundTaskService, BackgroundTaskService>();
+builder.Services.AddSingleton<IBackgroundTaskService, BackgroundTaskService>();
+builder.Services.AddHostedService(provider => (BackgroundTaskService)provider.GetRequiredService<IBackgroundTaskService>());
 
 // 注册兼容性适配器
 builder.Services.AddScoped<IndexConfigManagerAdapter>();
