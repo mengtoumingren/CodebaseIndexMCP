@@ -157,13 +157,13 @@ public class FileWatcherService : BackgroundService
             return;
         }
 
-        // 可以在这里添加逻辑，检查文件是否符合被索引的模式
-        // var watchConfig = library.WatchConfigObject;
-        // if (!IsFileMatch(fullPath, watchConfig.FilePatterns, watchConfig.ExcludePatterns))
-        // {
-        //     _logger.LogDebug("文件 {Path} 不匹配索引模式，已跳过。", fullPath);
-        //     return;
-        // }
+        // 检查文件是否符合被索引的模式
+        var watchConfig = library.WatchConfigObject;
+        if (!IsFileMatch(fullPath, watchConfig))
+        {
+            _logger.LogDebug("文件 {Path} 不匹配索引模式，已跳过。", fullPath);
+            return;
+        }
 
         switch (changeType)
         {
@@ -200,14 +200,47 @@ public class FileWatcherService : BackgroundService
             return;
         }
 
-        // 将重命名视为一次删除和一次创建
-        await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
-        await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, newFullPath);
+        // 检查新文件是否符合被索引的模式
+        var watchConfig = library.WatchConfigObject;
+        if (IsFileMatch(newFullPath, watchConfig))
+        {
+            _logger.LogDebug("重命名后的文件 {Path} 匹配索引模式，将进行处理。", newFullPath);
+            // 将重命名视为一次删除和一次创建
+            await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
+            await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, newFullPath);
+        }
+        else
+        {
+            _logger.LogDebug("重命名后的文件 {Path} 不匹配索引模式，仅处理删除。", newFullPath);
+            // 如果新文件不匹配，只处理旧文件的删除
+            await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
+        }
     }
 
     private void OnWatcherError(int libraryId, ErrorEventArgs e)
     {
         _logger.LogError(e.GetException(), "文件监控器发生错误: LibraryId={LibraryId}", libraryId);
+    }
+
+    private bool IsFileMatch(string filePath, WatchConfigurationDto config)
+    {
+        var fileName = Path.GetFileName(filePath);
+        var directoryName = Path.GetDirectoryName(filePath);
+
+        // 1. 检查是否在排除列表（检查完整路径和目录）
+        if (config.ExcludePatterns.Any(p => filePath.Contains(p, StringComparison.OrdinalIgnoreCase) || (directoryName != null && directoryName.Contains(p, StringComparison.OrdinalIgnoreCase))))
+        {
+            return false;
+        }
+
+        // 2. 如果文件模式列表为空，则默认匹配所有文件
+        if (config.FilePatterns == null || !config.FilePatterns.Any())
+        {
+            return true;
+        }
+
+        // 3. 检查是否匹配任何文件模式（检查文件名后缀）
+        return config.FilePatterns.Any(p => fileName.EndsWith(p, StringComparison.OrdinalIgnoreCase));
     }
 
     public bool StopWatcher(int libraryId)
