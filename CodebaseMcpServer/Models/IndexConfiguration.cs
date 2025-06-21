@@ -117,6 +117,24 @@ public class WatcherConfig
 }
 
 /// <summary>
+/// 索引处理设置
+/// </summary>
+public class IndexingSettings
+{
+    [JsonPropertyName("batchSize")]
+    public int BatchSize { get; set; } = 10;
+    
+    [JsonPropertyName("enableRealTimeProgress")]
+    public bool EnableRealTimeProgress { get; set; } = true;
+    
+    [JsonPropertyName("enableBatchLogging")]
+    public bool EnableBatchLogging { get; set; } = true;
+    
+    [JsonPropertyName("maxConcurrentBatches")]
+    public int MaxConcurrentBatches { get; set; } = 1;
+}
+
+/// <summary>
 /// 全局设置
 /// </summary>
 public class GlobalSettings
@@ -129,4 +147,7 @@ public class GlobalSettings
     
     [JsonPropertyName("autoCleanupDays")]
     public int AutoCleanupDays { get; set; } = 30;
+    
+    [JsonPropertyName("indexingSettings")]
+    public IndexingSettings IndexingSettings { get; set; } = new();
 }

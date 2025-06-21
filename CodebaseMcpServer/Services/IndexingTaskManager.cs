@@ -253,10 +253,25 @@ public class IndexingTaskManager
                 }
             }
             
-            var indexedCount = await _searchService.ProcessCodebaseAsync(
+            // 从配置获取批处理设置
+            var batchSize = 10; // 默认批大小
+            var enableRealTimeProgress = true;
+
+            // 使用新的批处理方法
+            var indexedCount = await _searchService.ProcessCodebaseInBatchesAsync(
                 task.CodebasePath,
                 collectionName,
-                new List<string> { "*.cs" });
+                new List<string> { "*.cs" },
+                batchSize,
+                async (processed, total, currentFile) => {
+                    // 实时更新任务进度
+                    if (enableRealTimeProgress)
+                    {
+                        task.CurrentFile = $"处理文件: {currentFile} ({processed}/{total})";
+                        task.ProgressPercentage = 10 + (processed * 80 / total); // 10%-90%区间
+                        await _persistenceService.UpdateTaskAsync(task);
+                    }
+                });
             
             // 🔥 新功能：填充 FileIndexDetails
             try

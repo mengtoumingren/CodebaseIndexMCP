@@ -177,12 +177,22 @@ public class EnhancedCodeSemanticSearch : IDisposable
 
 
     /// <summary>
-    /// 处理代码库并建立索引
+    /// 按批次处理代码库并建立索引 - 流式处理模式
     /// </summary>
-    public async Task<int> ProcessCodebaseAsync(string codebasePath, string collectionName, List<string>? filePatterns = null)
+    /// <param name="codebasePath">代码库路径</param>
+    /// <param name="collectionName">集合名称</param>
+    /// <param name="filePatterns">文件模式列表</param>
+    /// <param name="batchSize">批处理大小（文件数量）</param>
+    /// <param name="progressCallback">进度回调函数</param>
+    /// <returns>总共索引的代码片段数量</returns>
+    public async Task<int> ProcessCodebaseInBatchesAsync(
+        string codebasePath,
+        string collectionName,
+        List<string>? filePatterns = null,
+        int batchSize = 10,
+        Func<int, int, string, Task>? progressCallback = null)
     {
         filePatterns ??= new List<string> { "*.cs" };
-        var allSnippets = new List<CodeSnippet>();
         
         // 确保集合存在
         if (!await EnsureCollectionAsync(collectionName))
@@ -190,20 +200,98 @@ public class EnhancedCodeSemanticSearch : IDisposable
             throw new InvalidOperationException($"无法创建或访问集合: {collectionName}");
         }
         
-        // 遍历代码库中的所有匹配文件
+        // 获取所有匹配的文件
+        var allFiles = new List<string>();
         foreach (var pattern in filePatterns)
         {
-            foreach (var filePath in Directory.GetFiles(codebasePath, pattern, SearchOption.AllDirectories))
+            allFiles.AddRange(Directory.GetFiles(codebasePath, pattern, SearchOption.AllDirectories));
+        }
+        
+        var totalFiles = allFiles.Count;
+        var totalSnippets = 0;
+        var processedFiles = 0;
+        
+        _logger.LogInformation("开始批处理索引：{TotalFiles} 个文件，批大小：{BatchSize}",
+            totalFiles, batchSize);
+        
+        // 按批次处理文件
+        for (int i = 0; i < allFiles.Count; i += batchSize)
+        {
+            var batch = allFiles.Skip(i).Take(batchSize).ToList();
+            var batchNumber = i / batchSize + 1;
+            var totalBatches = (totalFiles + batchSize - 1) / batchSize;
+            
+            _logger.LogDebug("处理批次 {BatchNumber}/{TotalBatches}，包含 {FileCount} 个文件",
+                batchNumber, totalBatches, batch.Count);
+            
+            try
             {
-                var snippets = ExtractCodeSnippets(filePath);
-                allSnippets.AddRange(snippets);
+                // 处理当前批次的文件
+                var batchSnippets = new List<CodeSnippet>();
+                
+                foreach (var filePath in batch)
+                {
+                    // 更新进度回调
+                    if (progressCallback != null)
+                    {
+                        await progressCallback(processedFiles, totalFiles, Path.GetFileName(filePath));
+                    }
+                    
+                    var snippets = ExtractCodeSnippets(filePath);
+                    batchSnippets.AddRange(snippets);
+                    processedFiles++;
+                    
+                    _logger.LogTrace("文件 {FileName} 解析完成，提取 {Count} 个代码片段",
+                        Path.GetFileName(filePath), snippets.Count);
+                }
+                
+                // 立即索引当前批次的代码片段
+                if (batchSnippets.Any())
+                {
+                    await BatchIndexSnippetsAsync(batchSnippets, collectionName);
+                    totalSnippets += batchSnippets.Count;
+                    
+                    _logger.LogInformation("批次 {BatchNumber}/{TotalBatches} 索引完成：{SnippetCount} 个代码片段",
+                        batchNumber, totalBatches, batchSnippets.Count);
+                }
+                else
+                {
+                    _logger.LogWarning("批次 {BatchNumber}/{TotalBatches} 没有提取到代码片段",
+                        batchNumber, totalBatches);
+                }
+                
+                // 释放内存
+                batchSnippets.Clear();
+                
+                // 调用最终进度回调
+                if (progressCallback != null)
+                {
+                    await progressCallback(processedFiles, totalFiles, $"批次 {batchNumber} 完成");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "批次 {BatchNumber}/{TotalBatches} 处理失败，跳过继续处理下一批次",
+                    batchNumber, totalBatches);
+                
+                // 更新已处理文件数，即使失败也要继续
+                processedFiles += batch.Count;
             }
         }
         
-        // 批量处理代码片段
-        await BatchIndexSnippetsAsync(allSnippets, collectionName);
+        _logger.LogInformation("批处理索引完成：共处理 {TotalFiles} 个文件，索引 {TotalSnippets} 个代码片段",
+            totalFiles, totalSnippets);
         
-        return allSnippets.Count;
+        return totalSnippets;
+    }
+
+    /// <summary>
+    /// 处理代码库并建立索引 - 传统方法（向后兼容）
+    /// </summary>
+    public async Task<int> ProcessCodebaseAsync(string codebasePath, string collectionName, List<string>? filePatterns = null)
+    {
+        // 调用新的批处理方法，使用默认批大小
+        return await ProcessCodebaseInBatchesAsync(codebasePath, collectionName, filePatterns, batchSize: 50);
     }
 
     /// <summary>
