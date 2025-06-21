@@ -419,6 +419,210 @@ public class EnhancedCodeSemanticSearch : IDisposable
         
         _logger.LogInformation("批量索引完成，共处理 {Count} 个代码片段", snippets.Count);
     }
+/// <summary>
+    /// 并发批量索引代码片段 - 增强版
+    /// </summary>
+    public async Task<int> BatchIndexSnippetsConcurrentlyAsync(
+        List<CodeSnippet> snippets, 
+        string collectionName,
+        ConcurrencySettings? concurrencySettings = null)
+    {
+        var settings = concurrencySettings ?? GetDefaultConcurrencySettings();
+        
+        using var concurrentManager = new ConcurrentEmbeddingManager(
+            GetDefaultProvider(), settings,
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ConcurrentEmbeddingManager>());
+        
+        _logger.LogInformation("开始并发批量索引 {Count} 个代码片段到集合 {CollectionName}",
+            snippets.Count, collectionName);
+        
+        // 按并发批次分组
+        var concurrentBatches = SplitSnippetsForConcurrentProcessing(snippets, settings);
+        var indexedCount = 0;
+        
+        // 并发处理多个批次
+        var concurrencyLimiter = new SemaphoreSlim(
+            settings.MaxConcurrentFileBatches, 
+            settings.MaxConcurrentFileBatches);
+        
+        var tasks = concurrentBatches.Select(async batch =>
+        {
+            await concurrencyLimiter.WaitAsync();
+            try
+            {
+                var batchIndexed = await ProcessSnippetBatchConcurrently(
+                    batch, collectionName, concurrentManager);
+                Interlocked.Add(ref indexedCount, batchIndexed);
+                return batchIndexed;
+            }
+            finally
+            {
+                concurrencyLimiter.Release();
+            }
+        });
+        
+        await Task.WhenAll(tasks);
+        
+        _logger.LogInformation("并发批量索引完成，共处理 {Count} 个代码片段", indexedCount);
+        return indexedCount;
+    }
+
+    /// <summary>
+    /// 获取默认并发设置
+    /// </summary>
+    private ConcurrencySettings GetDefaultConcurrencySettings()
+    {
+        return new ConcurrencySettings();
+    }
+
+    /// <summary>
+    /// 分割代码片段为并发处理批次
+    /// </summary>
+    private List<List<CodeSnippet>> SplitSnippetsForConcurrentProcessing(
+        List<CodeSnippet> snippets, 
+        ConcurrencySettings settings)
+    {
+        var embeddingProvider = GetDefaultProvider();
+        var optimalBatchSize = Math.Min(
+            embeddingProvider.GetMaxBatchSize(), 
+            settings.EmbeddingBatchSizeOptimal);
+        
+        var batches = new List<List<CodeSnippet>>();
+        for (int i = 0; i < snippets.Count; i += optimalBatchSize)
+        {
+            var batch = snippets.Skip(i).Take(optimalBatchSize).ToList();
+            batches.Add(batch);
+        }
+        
+        _logger.LogDebug("代码片段分为 {BatchCount} 个并发批次，每批最多 {BatchSize} 个片段",
+            batches.Count, optimalBatchSize);
+        
+        return batches;
+    }
+
+    /// <summary>
+    /// 处理单个代码片段批次（并发）
+    /// </summary>
+    private async Task<int> ProcessSnippetBatchConcurrently(
+        List<CodeSnippet> batch,
+        string collectionName,
+        ConcurrentEmbeddingManager concurrentManager)
+    {
+        var embeddingProvider = GetDefaultProvider();
+        var maxTokenLength = embeddingProvider.GetMaxTokenLength();
+        var expectedDimension = embeddingProvider.GetEmbeddingDimension();
+        
+        // 过滤和预处理代码片段
+        var validSnippets = new List<CodeSnippet>();
+        var validTexts = new List<string>();
+        
+        foreach (var snippet in batch)
+        {
+            if (string.IsNullOrWhiteSpace(snippet.Code)) continue;
+            
+            var processedCode = PreprocessCodeText(snippet.Code, maxTokenLength);
+            if (string.IsNullOrWhiteSpace(processedCode)) continue;
+            
+            validSnippets.Add(snippet);
+            validTexts.Add(processedCode);
+        }
+        
+        if (!validTexts.Any()) return 0;
+        
+        try
+        {
+            // 并发获取嵌入向量
+            var embeddings = await concurrentManager.GetEmbeddingsConcurrentlyAsync(validTexts);
+            
+            if (embeddings.Count != validTexts.Count)
+            {
+                _logger.LogWarning("嵌入向量数量不匹配：期望 {Expected}，实际 {Actual}",
+                    validTexts.Count, embeddings.Count);
+                return 0;
+            }
+            
+            // 构建索引点
+            var points = BuildIndexPoints(validSnippets, embeddings, expectedDimension);
+            
+            // 批量插入 Qdrant
+            if (points.Any())
+            {
+                await _client.UpsertAsync(collectionName, points);
+                _logger.LogDebug("批次索引完成：{PointCount} 个索引点", points.Count);
+                return points.Count;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "批次并发索引失败：{BatchSize} 个代码片段", batch.Count);
+        }
+        
+        return 0;
+    }
+
+    /// <summary>
+    /// 预处理代码文本
+    /// </summary>
+    private string PreprocessCodeText(string code, int maxTokenLength)
+    {
+        var estimatedTokens = EstimateTokenCount(code);
+        
+        if (estimatedTokens > maxTokenLength)
+        {
+            _logger.LogDebug("代码片段过长 (约{Tokens}个Token)，截断至 {MaxTokens} Token",
+                estimatedTokens, maxTokenLength);
+            return TruncateText(code, maxTokenLength);
+        }
+        
+        return code;
+    }
+
+    /// <summary>
+    /// 构建索引点
+    /// </summary>
+    private List<PointStruct> BuildIndexPoints(
+        List<CodeSnippet> snippets, 
+        List<List<float>> embeddings,
+        int expectedDimension)
+    {
+        var points = new List<PointStruct>();
+        
+        for (int i = 0; i < snippets.Count && i < embeddings.Count; i++)
+        {
+            var snippet = snippets[i];
+            var embedding = embeddings[i];
+            
+            if (embedding.Count != expectedDimension)
+            {
+                _logger.LogWarning("嵌入向量维度不匹配：期望 {Expected}，实际 {Actual}，跳过片段",
+                    expectedDimension, embedding.Count);
+                continue;
+            }
+            
+            var payload = new Dictionary<string, Value>
+            {
+                ["filePath"] = new Value { StringValue = snippet.FilePath },
+                ["namespace"] = new Value { StringValue = snippet.Namespace ?? "" },
+                ["className"] = new Value { StringValue = snippet.ClassName ?? "" },
+                ["methodName"] = new Value { StringValue = snippet.MethodName ?? "" },
+                ["code"] = new Value { StringValue = snippet.Code },
+                ["startLine"] = new Value { IntegerValue = snippet.StartLine },
+                ["endLine"] = new Value { IntegerValue = snippet.EndLine }
+            };
+            
+            var vectorData = new Vector();
+            vectorData.Data.AddRange(embedding);
+            
+            points.Add(new PointStruct
+            {
+                Id = new PointId { Uuid = Guid.NewGuid().ToString() },
+                Vectors = new Vectors { Vector = vectorData },
+                Payload = { payload }
+            });
+        }
+        
+        return points;
+    }
 
     /// <summary>
     /// 在指定集合中搜索

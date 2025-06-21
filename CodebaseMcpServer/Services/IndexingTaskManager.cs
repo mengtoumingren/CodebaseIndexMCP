@@ -158,6 +158,187 @@ public class IndexingTaskManager
     }
 
     /// <summary>
+    /// 获取并发设置
+    /// </summary>
+    private ConcurrencySettings GetConcurrencySettings()
+    {
+        var settings = new ConcurrencySettings();
+        
+        // 从配置中读取并发设置
+        var concurrencySection = _configuration.GetSection("CodeSearch:IndexingSettings:concurrencySettings");
+        if (concurrencySection.Exists())
+        {
+            concurrencySection.Bind(settings);
+        }
+        
+        // 根据硬件环境优化配置
+        settings.OptimizeForEnvironment();
+        
+        _logger.LogDebug("并发设置: MaxConcurrentEmbeddingRequests={MaxEmbedding}, MaxConcurrentFileBatches={MaxFile}",
+            settings.MaxConcurrentEmbeddingRequests, settings.MaxConcurrentFileBatches);
+        
+        return settings;
+    }
+
+    /// <summary>
+    /// 按批次并发处理代码库并建立索引 - 增强版
+    /// </summary>
+    public async Task<int> ProcessCodebaseInBatchesConcurrentlyAsync(
+        string codebasePath,
+        string collectionName,
+        List<string>? filePatterns = null,
+        int batchSize = 10,
+        ConcurrencySettings? concurrencySettings = null,
+        Func<int, int, string, Task>? progressCallback = null)
+    {
+        filePatterns ??= new List<string> { "*.cs" };
+        var settings = concurrencySettings ?? GetConcurrencySettings();
+        
+        // 确保集合存在
+        if (!await _searchService.EnsureCollectionAsync(collectionName))
+        {
+            throw new InvalidOperationException($"无法创建或访问集合: {collectionName}");
+        }
+        
+        // 获取所有匹配的文件
+        var allFiles = GetMatchingFiles(codebasePath, filePatterns);
+        var totalFiles = allFiles.Count;
+        var totalSnippets = 0;
+        var processedFiles = 0;
+        
+        _logger.LogInformation("开始并发批处理索引：{TotalFiles} 个文件，批大小：{BatchSize}，并发度：{Concurrency}",
+            totalFiles, batchSize, settings.MaxConcurrentFileBatches);
+        
+        // 创建文件批次
+        var fileBatches = CreateFileBatches(allFiles, batchSize);
+        var concurrencyLimiter = new SemaphoreSlim(
+            settings.MaxConcurrentFileBatches, 
+            settings.MaxConcurrentFileBatches);
+        
+        // 并发处理文件批次
+        var tasks = fileBatches.Select(async (batch, batchIndex) =>
+        {
+            await concurrencyLimiter.WaitAsync();
+            try
+            {
+                return await ProcessFileBatchConcurrently(
+                    batch, batchIndex, fileBatches.Count, collectionName,
+                    settings, progressCallback, totalFiles);
+            }
+            finally
+            {
+                concurrencyLimiter.Release();
+            }
+        });
+        
+        var batchResults = await Task.WhenAll(tasks);
+        totalSnippets = batchResults.Sum(r => r.IndexedCount);
+        processedFiles = batchResults.Sum(r => r.ProcessedFiles);
+        
+        _logger.LogInformation("并发批处理索引完成：共处理 {TotalFiles} 个文件，索引 {TotalSnippets} 个代码片段",
+            totalFiles, totalSnippets);
+        
+        return totalSnippets;
+    }
+
+    /// <summary>
+    /// 获取匹配的文件列表
+    /// </summary>
+    private List<string> GetMatchingFiles(string codebasePath, List<string> filePatterns)
+    {
+        var allFiles = new List<string>();
+        foreach (var pattern in filePatterns)
+        {
+            var files = Directory.GetFiles(codebasePath, pattern, SearchOption.AllDirectories)
+                .Where(f => !f.IsExcludedPath(new List<string> { "bin", "obj", ".git", "node_modules" }));
+            allFiles.AddRange(files);
+        }
+        return allFiles;
+    }
+
+    /// <summary>
+    /// 创建文件批次
+    /// </summary>
+    private List<List<string>> CreateFileBatches(List<string> files, int batchSize)
+    {
+        var batches = new List<List<string>>();
+        for (int i = 0; i < files.Count; i += batchSize)
+        {
+            var batch = files.Skip(i).Take(batchSize).ToList();
+            batches.Add(batch);
+        }
+        return batches;
+    }
+
+    /// <summary>
+    /// 并发处理单个文件批次
+    /// </summary>
+    private async Task<(int IndexedCount, int ProcessedFiles)> ProcessFileBatchConcurrently(
+        List<string> fileBatch,
+        int batchIndex,
+        int totalBatches,
+        string collectionName,
+        ConcurrencySettings settings,
+        Func<int, int, string, Task>? progressCallback,
+        int totalFiles)
+    {
+        var batchNumber = batchIndex + 1;
+        _logger.LogDebug("开始处理批次 {BatchNumber}/{TotalBatches}，包含 {FileCount} 个文件",
+            batchNumber, totalBatches, fileBatch.Count);
+        
+        var processedFilesInBatch = 0;
+        
+        try
+        {
+            // 并发解析文件
+            var snippetTasks = fileBatch.Select(async filePath =>
+            {
+                var snippets = _searchService.ExtractCodeSnippets(filePath);
+                _logger.LogTrace("文件 {FileName} 解析完成，提取 {Count} 个代码片段",
+                    Path.GetFileName(filePath), snippets.Count);
+                
+                // 更新本批次处理的文件数
+                Interlocked.Increment(ref processedFilesInBatch);
+                
+                // 调用进度回调（传递文件名信息）
+                if (progressCallback != null)
+                {
+                    await progressCallback(0, totalFiles, Path.GetFileName(filePath)); // 0 作为占位符，实际计数在外层处理
+                }
+                
+                return snippets;
+            });
+            
+            var allSnippetsArrays = await Task.WhenAll(snippetTasks);
+            var batchSnippets = allSnippetsArrays.SelectMany(s => s).ToList();
+            
+            // 并发索引当前批次的代码片段
+            if (batchSnippets.Any())
+            {
+                var indexedCount = await _searchService.BatchIndexSnippetsConcurrentlyAsync(
+                    batchSnippets, collectionName, settings);
+                
+                _logger.LogInformation("批次 {BatchNumber}/{TotalBatches} 并发索引完成：{SnippetCount} 个代码片段",
+                    batchNumber, totalBatches, indexedCount);
+                
+                return (indexedCount, processedFilesInBatch);
+            }
+            else
+            {
+                _logger.LogWarning("批次 {BatchNumber}/{TotalBatches} 没有提取到代码片段",
+                    batchNumber, totalBatches);
+                return (0, processedFilesInBatch);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "批次 {BatchNumber}/{TotalBatches} 并发处理失败",
+                batchNumber, totalBatches);
+            return (0, processedFilesInBatch);
+        }
+    }
+
+    /// <summary>
     /// 执行索引任务
     /// </summary>
     private async Task ExecuteIndexingTaskAsync(IndexingTask task, string? friendlyName)
@@ -256,13 +437,15 @@ public class IndexingTaskManager
             // 从配置获取批处理设置
             var batchSize = 10; // 默认批大小
             var enableRealTimeProgress = true;
+            var concurrencySettings = GetConcurrencySettings();
 
-            // 使用新的批处理方法
-            var indexedCount = await _searchService.ProcessCodebaseInBatchesAsync(
+            // 使用并发批处理方法
+            var indexedCount = await ProcessCodebaseInBatchesConcurrentlyAsync(
                 task.CodebasePath,
                 collectionName,
                 new List<string> { "*.cs" },
                 batchSize,
+                concurrencySettings,
                 async (processed, total, currentFile) => {
                     // 实时更新任务进度
                     if (enableRealTimeProgress)
@@ -853,7 +1036,8 @@ public class IndexingTaskManager
             _logger.LogError(ex, "移除 FileIndexDetails 失败: {FilePath}", filePath);
         }
     }
-/// <summary>
+
+    /// <summary>
     /// 处理文件删除事件，清理Qdrant索引和元数据
     /// </summary>
     public async Task<bool> HandleFileDeletionAsync(string filePath, string collectionName)

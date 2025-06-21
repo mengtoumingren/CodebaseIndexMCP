@@ -8,7 +8,9 @@ using CodebaseMcpServer.Services.Embedding; // Added for Embedding services
 using CodebaseMcpServer.Services.Embedding.Models; // Added for Embedding configuration models
 using CodebaseMcpServer.Models; // Added for CodeSearchOptions
 using ModelContextProtocol.AspNetCore;
+using System.Net;
 
+HttpClient.DefaultProxy = new WebProxy();
 var builder = WebApplication.CreateBuilder(args);
 
 // 添加日志配置
