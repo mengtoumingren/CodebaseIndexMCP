@@ -4,6 +4,8 @@ using CodebaseMcpServer.Models;
 using CodebaseMcpServer.Models.Domain;
 using CodebaseMcpServer.Services.Domain;
 using CodebaseMcpServer.Services.Data.Repositories;
+using Microsoft.Extensions.Configuration;
+using System.Threading;
 
 namespace CodebaseMcpServer.Services;
 
@@ -16,15 +18,21 @@ public class FileWatcherService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ConcurrentDictionary<int, FileSystemWatcher> _watchers = new();
     private readonly IBackgroundTaskService _backgroundTaskService;
+    private readonly ConcurrentDictionary<string, Timer> _debouncedEvents = new();
+    private readonly TimeSpan _debounceDelay;
 
     public FileWatcherService(
         ILogger<FileWatcherService> logger,
         IServiceProvider serviceProvider,
-        IBackgroundTaskService backgroundTaskService)
+        IBackgroundTaskService backgroundTaskService,
+        IConfiguration configuration)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _backgroundTaskService = backgroundTaskService;
+        _debounceDelay = TimeSpan.FromMilliseconds(
+            configuration.GetValue<int>("FileWatcher:DebounceTime", 500)
+        );
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -119,10 +127,14 @@ public class FileWatcherService : BackgroundService
             };
             
             // 绑定事件处理器
-            watcher.Created += (s, e) => OnFileChanged(library.Id, e.FullPath, FileChangeType.Created);
-            watcher.Changed += (s, e) => OnFileChanged(library.Id, e.FullPath, FileChangeType.Modified);
-            watcher.Deleted += (s, e) => OnFileChanged(library.Id, e.FullPath, FileChangeType.Deleted);
-            watcher.Renamed += (s, e) => OnFileRenamed(library.Id, e.OldFullPath, e.FullPath);
+            watcher.Created += (s, e) => DebounceEvent(library.Id, e.FullPath);
+            watcher.Changed += (s, e) => DebounceEvent(library.Id, e.FullPath);
+            watcher.Deleted += (s, e) => DebounceEvent(library.Id, e.FullPath);
+            watcher.Renamed += (s, e) => {
+                // 将重命名视为旧路径的删除和新路径的创建/修改
+                DebounceEvent(library.Id, e.OldFullPath);
+                DebounceEvent(library.Id, e.FullPath);
+            };
             watcher.Error += (s, e) => OnWatcherError(library.Id, e);
 
             watcher.EnableRaisingEvents = true;
@@ -136,16 +148,51 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    private async void OnFileChanged(int libraryId, string fullPath, Models.FileChangeType changeType)
+    private void DebounceEvent(int libraryId, string fullPath)
     {
-          // 排除数据库文件
+        // 排除数据库文件
         var fileName = Path.GetFileName(fullPath);
         if (fileName.Contains("codebase-app.db"))
         {
-            _logger.LogDebug("数据库文件变更，已跳过: {Path}", fullPath);
+            _logger.LogTrace("数据库文件变更，已跳过: {Path}", fullPath);
             return;
         }
-        _logger.LogInformation("检测到文件变更: LibraryId={LibraryId}, Type={ChangeType}, Path={Path}", libraryId, changeType, fullPath);
+
+        _logger.LogTrace("检测到原始文件变更: LibraryId={LibraryId}, Path={Path}", libraryId, fullPath);
+
+        if (_debouncedEvents.TryGetValue(fullPath, out var timer))
+        {
+            timer.Change(_debounceDelay, Timeout.InfiniteTimeSpan);
+            _logger.LogTrace("Debounce timer reset for: {Path}", fullPath);
+        }
+        else
+        {
+            var newTimer = new Timer(
+                callback: _ => ProcessFileChange(libraryId, fullPath),
+                state: null,
+                dueTime: _debounceDelay,
+                period: Timeout.InfiniteTimeSpan
+            );
+
+            if (!_debouncedEvents.TryAdd(fullPath, newTimer))
+            {
+                newTimer.Dispose();
+            }
+            else
+            {
+                _logger.LogTrace("Debounce timer started for: {Path}", fullPath);
+            }
+        }
+    }
+
+    private async void ProcessFileChange(int libraryId, string fullPath)
+    {
+        if (_debouncedEvents.TryRemove(fullPath, out var timer))
+        {
+            timer.Dispose();
+        }
+
+        _logger.LogInformation("处理防抖后的文件变更: LibraryId={LibraryId}, Path={Path}", libraryId, fullPath);
 
         using var scope = _serviceProvider.CreateScope();
         var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
@@ -157,7 +204,6 @@ public class FileWatcherService : BackgroundService
             return;
         }
 
-        // 检查文件是否符合被索引的模式
         var watchConfig = library.WatchConfigObject;
         if (!IsFileMatch(fullPath, watchConfig))
         {
@@ -165,55 +211,13 @@ public class FileWatcherService : BackgroundService
             return;
         }
 
-        switch (changeType)
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
-            case Models.FileChangeType.Created:
-            case Models.FileChangeType.Modified:
-                await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, fullPath);
-                break;
-            case Models.FileChangeType.Deleted:
-                await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, fullPath);
-                break;
-        }
-    }
-
-    private async void OnFileRenamed(int libraryId, string oldFullPath, string newFullPath)
-    {
-        _logger.LogInformation("检测到文件重命名: LibraryId={LibraryId}, Old={OldPath}, New={NewPath}", libraryId, oldFullPath, newFullPath);
-
-        using var scope = _serviceProvider.CreateScope();
-        var libraryRepository = scope.ServiceProvider.GetRequiredService<IIndexLibraryRepository>();
-        var library = await libraryRepository.GetByIdAsync(libraryId);
-
-        if (library == null)
-        {
-            _logger.LogWarning("处理文件重命名时找不到索引库: LibraryId={LibraryId}", libraryId);
-            return;
-        }
-        // 排除数据库文件
-        var oldFileName = Path.GetFileName(oldFullPath);
-
-        var newFileName = Path.GetFileName(newFullPath);
-        if (oldFileName.Contains("codebase-app.db") || newFileName.Contains("codebase-app.db"))
-        {
-            _logger.LogDebug("数据库文件重命名，已跳过: Old={OldPath}, New={NewPath}", oldFullPath, newFullPath);
-            return;
-        }
-
-        // 检查新文件是否符合被索引的模式
-        var watchConfig = library.WatchConfigObject;
-        if (IsFileMatch(newFullPath, watchConfig))
-        {
-            _logger.LogDebug("重命名后的文件 {Path} 匹配索引模式，将进行处理。", newFullPath);
-            // 将重命名视为一次删除和一次创建
-            await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
-            await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, newFullPath);
+            await _backgroundTaskService.QueueFileUpdateTaskAsync(libraryId, fullPath);
         }
         else
         {
-            _logger.LogDebug("重命名后的文件 {Path} 不匹配索引模式，仅处理删除。", newFullPath);
-            // 如果新文件不匹配，只处理旧文件的删除
-            await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, oldFullPath);
+            await _backgroundTaskService.QueueFileDeleteTaskAsync(libraryId, fullPath);
         }
     }
 
@@ -260,6 +264,10 @@ public class FileWatcherService : BackgroundService
         foreach (var watcher in _watchers.Values)
         {
             watcher.Dispose();
+        }
+        foreach (var timer in _debouncedEvents.Values)
+        {
+            timer.Dispose();
         }
         base.Dispose();
     }
