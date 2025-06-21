@@ -257,6 +257,14 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
 
         var correctedIncludePatterns = includePatterns.Select(p =>
         {
+            // 如果需要包含子目录，并且模式是一个简单的文件模式 (如 *.cs)，则添加递归前缀
+            if (includeSubdirectories && p.StartsWith("*.") && !p.Contains('/') && !p.Contains('\\'))
+            {
+                var corrected = $"**/{p}";
+                _logger.LogDebug("修正包含模式 (递归): 从 '{OriginalPattern}' 到 '{CorrectedPattern}'", p, corrected);
+                return corrected;
+            }
+            
             if (p.StartsWith(".") && !p.Contains('*') && !p.Contains('?'))
             {
                 string prefix = includeSubdirectories ? "**/" : "";
