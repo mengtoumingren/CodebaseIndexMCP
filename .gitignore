@@ -255,3 +255,4 @@ paket-files/
 WorkFlowCore/WorkFlowCore.BusinessDemo.Web/BusinessDemo.db
 WorkFlowCore/WorkFlowCore.BusinessDemo.Web/BusinessDemo.db-wal
 CodebaseMcpServer/file-changes-storage
+CodebaseMcpServer/codebase-app.db
