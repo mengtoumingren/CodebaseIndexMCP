@@ -347,7 +347,8 @@
 
         <!-- 仪表板 -->
         <div id="dashboard" class="tab-content">
-            <div class="stats-grid" id="statsGrid"></div>
+            <div class="stats-grid" id="libraryStatsGrid"></div>
+            <div class="stats-grid" id="taskStatsGridDashboard" style="margin-top: 1rem"></div>
             <div class="card">
                 <h3>📈 项目类型分布</h3>
                 <div id="projectTypeChart">加载中...</div>
@@ -368,7 +369,6 @@
 
         <!-- 任务监控 -->
         <div id="tasks" class="tab-content">
-            <div class="stats-grid" id="taskStatsGrid"></div>
             <div class="card">
                 <h3>📋 任务列表</h3>
                 <div id="tasksContainer"><div class="loading"></div> 加载中...</div>
@@ -486,15 +486,28 @@
         // 加载仪表板数据
         async function loadDashboard() {
             try {
-                const statsResponse = await fetch('/api/IndexLibrary/statistics/global');
+                const [statsResponse, taskSummaryRes] = await Promise.all([
+                    fetch('/api/IndexLibrary/statistics/global'),
+                    fetch('/api/task/summary')
+                ]);
+
                 globalStats = await statsResponse.json();
+                const taskSummary = await taskSummaryRes.json();
                 
-                const statsGrid = document.getElementById('statsGrid');
-                statsGrid.innerHTML = `
+                const libraryStatsGrid = document.getElementById('libraryStatsGrid');
+                libraryStatsGrid.innerHTML = `
                     <div class="stat-card"><div class="stat-number">${globalStats.totalLibraries || 0}</div><div class="stat-label">总索引库数</div></div>
                     <div class="stat-card"><div class="stat-number">${globalStats.completedLibraries || 0}</div><div class="stat-label">已完成索引</div></div>
                     <div class="stat-card"><div class="stat-number">${globalStats.totalFiles || 0}</div><div class="stat-label">总文件数</div></div>
                     <div class="stat-card"><div class="stat-number">${globalStats.totalSnippets || 0}</div><div class="stat-label">总代码片段</div></div>
+                `;
+
+                const taskStatsGrid = document.getElementById('taskStatsGridDashboard');
+                taskStatsGrid.innerHTML = `
+                    <div class="stat-card"><div class="stat-number">${taskSummary.totalTasks || 0}</div><div class="stat-label">总任务数</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.runningTasks || 0}</div><div class="stat-label">运行中</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.completedTasks || 0}</div><div class="stat-label">已完成</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.failedTasks || 0}</div><div class="stat-label">失败</div></div>
                 `;
                 
                 const typeResponse = await fetch('/api/IndexLibrary/statistics/project-type-distribution');
@@ -560,20 +573,8 @@
         // 加载任务监控数据
         async function loadTasks() {
             try {
-                const [summaryRes, tasksRes] = await Promise.all([
-                    fetch('/api/task/summary'),
-                    fetch('/api/task')
-                ]);
-                const summary = await summaryRes.json();
+                const tasksRes = await fetch('/api/task');
                 const tasks = await tasksRes.json();
-
-                const statsGrid = document.getElementById('taskStatsGrid');
-                statsGrid.innerHTML = `
-                    <div class="stat-card"><div class="stat-number">${summary.totalTasks}</div><div class="stat-label">总任务数</div></div>
-                    <div class="stat-card"><div class="stat-number">${summary.runningTasks}</div><div class="stat-label">运行中</div></div>
-                    <div class="stat-card"><div class="stat-number">${summary.completedTasks}</div><div class="stat-label">已完成</div></div>
-                    <div class="stat-card"><div class="stat-number">${summary.failedTasks}</div><div class="stat-label">失败</div></div>
-                `;
 
                 let tasksHtml = `
                     <table class="task-table">
