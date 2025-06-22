@@ -377,7 +377,7 @@
             <div class="stats-grid" id="libraryStatsGrid"></div>
             <div class="stats-grid" id="taskStatsGridDashboard" style="margin-top: 1rem"></div>
             <div class="card">
-                <h3>📈 项目类型分布</h3>
+                <h3>📈 文件类型分布</h3>
                 <div id="projectTypeChart">加载中...</div>
             </div>
             <div class="card">
@@ -548,12 +548,12 @@
                     <div class="stat-card"><div class="stat-number">${taskSummary.failedTasks || 0}</div><div class="stat-label">失败</div></div>
                 `;
                 
-                const typeResponse = await fetch('/api/IndexLibrary/statistics/project-type-distribution');
+                const typeResponse = await fetch('/api/IndexLibrary/statistics/language-distribution');
                 const typeDistribution = await typeResponse.json();
                 
                 let chartHtml = '';
                 for (const [type, count] of Object.entries(typeDistribution)) {
-                    const percentage = globalStats.totalLibraries ? ((count / globalStats.totalLibraries) * 100).toFixed(1) : 0;
+                    const percentage = globalStats.totalFiles ? ((count / globalStats.totalFiles) * 100).toFixed(1) : 0;
                     chartHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"><span>${type}</span><span>${count} (${percentage}%)</span></div>`;
                 }
                 document.getElementById('projectTypeChart').innerHTML = chartHtml || '暂无数据';

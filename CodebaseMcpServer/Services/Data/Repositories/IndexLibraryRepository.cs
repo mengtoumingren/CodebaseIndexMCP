@@ -314,18 +314,34 @@ public class IndexLibraryRepository : IIndexLibraryRepository
 
     public async Task<Dictionary<string, int>> GetLanguageDistributionAsync()
     {
-        var sql = $@"
-            SELECT 
-                key as Language,
-                CAST(value AS INTEGER) as Count
-            FROM IndexLibraries,
-                 {JsonQueryHelper.JsonEach("Statistics", "languageDistribution")}
-            WHERE IsActive = 1";
-        
-        var results = await _context.Connection.QueryAsync<(string Language, int Count)>(sql);
-        
-        return results.GroupBy(r => r.Language)
-                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+        var sql = "SELECT Statistics FROM IndexLibraries WHERE IsActive = 1";
+        var statisticsJsons = await _context.Connection.QueryAsync<string>(sql);
+
+        var totalDistribution = new Dictionary<string, int>();
+
+        foreach (var json in statisticsJsons)
+        {
+            if (string.IsNullOrWhiteSpace(json)) continue;
+
+            try
+            {
+                var stats = JsonSerializer.Deserialize<StatisticsDto>(json);
+                if (stats?.LanguageDistribution != null)
+                {
+                    foreach (var entry in stats.LanguageDistribution)
+                    {
+                        totalDistribution.TryGetValue(entry.Key, out var currentCount);
+                        totalDistribution[entry.Key] = currentCount + entry.Value;
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "反序列化统计信息JSON失败: {Json}", json);
+            }
+        }
+
+        return totalDistribution;
     }
 
     public async Task<Dictionary<string, int>> GetProjectTypeDistributionAsync()

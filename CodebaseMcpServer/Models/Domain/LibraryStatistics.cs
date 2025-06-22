@@ -7,7 +7,7 @@ public class LibraryStatistics
 {
     public int TotalLibraries { get; set; }
     public int ActiveLibraries { get; set; }
-    public int TotalIndexedSnippets { get; set; }
+    public int TotalSnippets { get; set; }
     public int TotalFiles { get; set; }
     public long TotalSizeBytes { get; set; }
     public Dictionary<string, int> ProjectTypeDistribution { get; set; } = new();

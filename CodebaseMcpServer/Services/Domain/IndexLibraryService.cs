@@ -349,7 +349,7 @@ public class IndexLibraryService : IIndexLibraryService
         return new CodebaseMcpServer.Models.Domain.LibraryStatistics
         {
             TotalLibraries = repoStats.TotalLibraries,
-            TotalIndexedSnippets = repoStats.TotalSnippets,
+            TotalSnippets = repoStats.TotalSnippets,
             TotalFiles = repoStats.TotalFiles,
             ActiveLibraries = repoStats.ActiveLibraries,
             LastCalculatedAt = repoStats.LastUpdated,
