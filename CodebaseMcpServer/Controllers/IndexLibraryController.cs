@@ -123,6 +123,16 @@ public class IndexLibraryController : ControllerBase
             }
 
             var result = await _indexLibraryService.UpdateAsync(library);
+
+            if (request.FilePatterns != null || request.ExcludePatterns != null)
+            {
+                var watchConfigRequest = new UpdateWatchConfigurationRequest
+                {
+                    FilePatterns = request.FilePatterns?.ToArray(),
+                    ExcludePatterns = request.ExcludePatterns?.ToArray()
+                };
+                await _indexLibraryService.UpdateWatchConfigurationAsync(id, watchConfigRequest);
+            }
             if (result)
             {
                 return Ok(new { message = "索引库更新成功" });
@@ -211,36 +221,6 @@ public class IndexLibraryController : ControllerBase
         {
             _logger.LogError(ex, "更新元数据失败: {LibraryId}", id);
             return StatusCode(500, new { message = "更新元数据失败", error = ex.Message });
-        }
-    }
-
-    /// <summary>
-    /// 更新关联的配置预设
-    /// </summary>
-    [HttpPut("{id}/presets")]
-    public async Task<ActionResult> UpdateLibraryPresets(int id, [FromBody] UpdateLibraryPresetsRequest request)
-    {
-        try
-        {
-            if (request == null || request.PresetIds == null)
-            {
-                return BadRequest(new { message = "请求体无效" });
-            }
-
-            var result = await _indexLibraryService.UpdatePresetsAsync(id, request.PresetIds);
-            if (result)
-            {
-                return Ok(new { message = "配置预设更新成功" });
-            }
-            else
-            {
-                return BadRequest(new { message = "配置预设更新失败" });
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "更新配置预设失败: {LibraryId}", id);
-            return StatusCode(500, new { message = "更新配置预设时发生意外错误", error = ex.Message });
         }
     }
 
@@ -499,14 +479,8 @@ public class CreateIndexLibraryResponse
 public class UpdateIndexLibraryRequest
 {
     public string? Name { get; set; }
-}
-
-/// <summary>
-/// 更新关联预设请求
-/// </summary>
-public class UpdateLibraryPresetsRequest
-{
-    public List<string> PresetIds { get; set; } = new();
+    public List<string>? FilePatterns { get; set; }
+    public List<string>? ExcludePatterns { get; set; }
 }
 
 /// <summary>

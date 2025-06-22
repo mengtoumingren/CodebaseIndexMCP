@@ -251,6 +251,34 @@
             display: block;
             margin-bottom: 0.5rem;
         }
+        .tag-input-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .tag {
+            display: flex;
+            align-items: center;
+            background: #e9ecef;
+            color: #495057;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        .tag-remove {
+            margin-left: 0.5rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .tag-input {
+            flex-grow: 1;
+            border: none;
+            outline: none;
+            padding: 0.25rem;
+        }
 
         .loading {
             display: inline-block;
@@ -407,10 +435,12 @@
                     <input type="text" class="form-input" id="libraryName" placeholder="留空将自动生成">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">配置预设 (可多选)</label>
-                    <div id="presetCheckboxes" class="preset-checkbox-group">
-                        <div class="loading"></div> 加载中...
-                    </div>
+                    <label class="form-label">文件包含模式</label>
+                    <div id="filePatternsContainer"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">文件排除模式</label>
+                    <div id="excludePatternsContainer"></div>
                 </div>
                 <div id="formResult" class="hidden"></div>
                 <div style="text-align: right;">
@@ -646,23 +676,51 @@
             }
         }
 
-        // 为模态框加载预设
-        async function loadModalPresets(selectedPresetIds = []) {
-            try {
-                if (!presets.length) {
-                    const response = await fetch('/api/Configuration/presets');
-                    presets = await response.json();
-                }
-                const container = document.getElementById('presetCheckboxes');
-                let html = '';
-                presets.forEach(p => {
-                    const isChecked = selectedPresetIds.includes(p.id);
-                    html += `<label class="preset-checkbox-item"><input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''}> ${p.name} (${p.isBuiltIn ? '内置' : '自定义'})</label>`;
+        // 创建标签式输入组件
+        function createTagInput(containerId, initialTags = []) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            const tagInputContainer = document.createElement('div');
+            tagInputContainer.className = 'tag-input-container';
+            
+            const tags = new Set(initialTags);
+
+            function renderTags() {
+                tagInputContainer.innerHTML = '';
+                tags.forEach(tag => {
+                    const tagElement = document.createElement('div');
+                    tagElement.className = 'tag';
+                    tagElement.innerHTML = `<span>${tag}</span><span class="tag-remove" data-tag="${tag}">&times;</span>`;
+                    tagInputContainer.appendChild(tagElement);
                 });
-                container.innerHTML = html || '没有可用的预设。';
-            } catch (error) {
-                document.getElementById('presetCheckboxes').innerHTML = `<div class="alert alert-error">加载预设失败</div>`;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'tag-input';
+                input.placeholder = '添加并按回车...';
+                tagInputContainer.appendChild(input);
             }
+
+            tagInputContainer.addEventListener('click', e => {
+                if (e.target.classList.contains('tag-remove')) {
+                    tags.delete(e.target.dataset.tag);
+                    renderTags();
+                }
+            });
+
+            tagInputContainer.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                    e.preventDefault();
+                    tags.add(e.target.value.trim());
+                    renderTags();
+                }
+            });
+            
+            container.appendChild(tagInputContainer);
+            renderTags();
+
+            return {
+                getTags: () => Array.from(tags)
+            };
         }
 
         // 显示/隐藏创建/编辑索引库模态框
@@ -682,22 +740,19 @@
                     document.getElementById('libraryId').value = lib.id;
                     document.getElementById('libraryName').value = lib.name;
                     codebasePathInput.value = lib.codebasePath;
-                    codebasePathInput.disabled = true; // 路径不可编辑
-                    
-                    // 获取详细信息以预选预设
+                    codebasePathInput.disabled = true;
+
                     const response = await fetch(`/api/IndexLibrary/${libraryId}`);
                     const detailedLib = await response.json();
-                    const associatedPresetIds = presets.filter(p =>
-                        p.watchConfiguration.filePatterns.every(fp => detailedLib.filePatterns.includes(fp)) &&
-                        p.watchConfiguration.excludePatterns.every(ep => detailedLib.excludePatterns.includes(ep))
-                    ).map(p => p.id);
                     
-                    await loadModalPresets(associatedPresetIds);
+                    window.filePatternsTagInput = createTagInput('filePatternsContainer', detailedLib.filePatterns);
+                    window.excludePatternsTagInput = createTagInput('excludePatternsContainer', detailedLib.excludePatterns);
                 }
             } else {
                 modalTitle.textContent = '创建新的索引库';
                 codebasePathInput.disabled = false;
-                await loadModalPresets();
+                window.filePatternsTagInput = createTagInput('filePatternsContainer', ['**/*']);
+                window.excludePatternsTagInput = createTagInput('excludePatternsContainer', ['bin/', 'obj/']);
             }
             
             document.getElementById('libraryModal').classList.remove('hidden');
@@ -717,48 +772,37 @@
             const libraryId = document.getElementById('libraryId').value;
             const isEditing = !!libraryId;
 
-            // 更新名称
             const name = document.getElementById('libraryName').value;
+            const filePatterns = window.filePatternsTagInput.getTags();
+            const excludePatterns = window.excludePatternsTagInput.getTags();
+
             if (isEditing) {
+                // 更新
+                const updateData = { name, filePatterns, excludePatterns };
                 try {
-                    const nameUpdateRes = await fetch(`/api/IndexLibrary/${libraryId}`, {
+                    const response = await fetch(`/api/IndexLibrary/${libraryId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name })
+                        body: JSON.stringify(updateData)
                     });
-                    if (!nameUpdateRes.ok) throw new Error('更新名称失败');
+                    if (!response.ok) {
+                         const error = await response.json();
+                         throw new Error(error.message || '更新失败');
+                    }
                 } catch (error) {
                     formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
                     formResult.classList.remove('hidden');
                     return;
                 }
-            }
-
-            // 更新预设
-            const selectedPresetIds = Array.from(document.querySelectorAll('#presetCheckboxes input:checked')).map(cb => cb.value);
-            if (isEditing) {
-                 try {
-                    const presetsUpdateRes = await fetch(`/api/IndexLibrary/${libraryId}/presets`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ presetIds: selectedPresetIds })
-                    });
-                    if (!presetsUpdateRes.ok) throw new Error('更新配置预设失败');
-                } catch (error) {
-                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
-                    formResult.classList.remove('hidden');
-                    return;
-                }
-            }
-
-            // 创建
-            if (!isEditing) {
+            } else {
+                // 创建
                 const createData = {
                     codebasePath: document.getElementById('codebasePath').value,
                     name: name || null,
-                    presetIds: selectedPresetIds
+                    // 注意：创建时我们不直接传递patterns，而是依赖后端从预设或自动检测生成
+                    // 如果需要创建时也自定义，则需要修改CreateAsync逻辑
                 };
-                try {
+                 try {
                     const response = await fetch('/api/IndexLibrary', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },

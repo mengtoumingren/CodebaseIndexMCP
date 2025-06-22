@@ -295,40 +295,6 @@ public class IndexLibraryService : IIndexLibraryService
         }
     }
 
-    public async Task<bool> UpdatePresetsAsync(int libraryId, List<string> presetIds)
-    {
-        try
-        {
-            var library = await _libraryRepository.GetByIdAsync(libraryId);
-            if (library == null)
-            {
-                _logger.LogWarning("尝试更新不存在的索引库的预设: LibraryId={LibraryId}", libraryId);
-                return false;
-            }
-
-            _logger.LogInformation("正在为 LibraryId={LibraryId} 更新配置预设", libraryId);
-
-            var newWatchConfig = await _presetService.MergePresetsAsync(presetIds);
-            var success = await _libraryRepository.UpdateWatchConfigAsync(libraryId, newWatchConfig);
-
-            if (success)
-            {
-                _logger.LogInformation("成功更新 LibraryId={LibraryId} 的配置预设", libraryId);
-            }
-            else
-            {
-                _logger.LogWarning("更新 LibraryId={LibraryId} 的配置预设失败", libraryId);
-            }
-
-            return success;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "更新配置预设时发生错误: LibraryId={LibraryId}", libraryId);
-            return false;
-        }
-    }
-
     public async Task<List<IndexLibrary>> GetByProjectTypeAsync(string projectType)
     {
         return await _libraryRepository.GetByProjectTypeAsync(projectType);

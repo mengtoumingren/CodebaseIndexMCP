@@ -24,7 +24,6 @@ public interface IIndexLibraryService
     // 配置管理
     Task<bool> UpdateWatchConfigurationAsync(int libraryId, UpdateWatchConfigurationRequest request);
     Task<bool> UpdateMetadataAsync(int libraryId, UpdateMetadataRequest request);
-    Task<bool> UpdatePresetsAsync(int libraryId, List<string> presetIds);
     
     // 查询和搜索
     Task<List<IndexLibrary>> GetByProjectTypeAsync(string projectType);
