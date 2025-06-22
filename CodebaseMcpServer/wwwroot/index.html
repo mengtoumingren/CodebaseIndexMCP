@@ -342,7 +342,6 @@
             <a class="nav-tab" href="#libraries">📚 索引库管理</a>
             <a class="nav-tab" href="#tasks">📈 任务监控</a>
             <a class="nav-tab" href="#presets">📝 配置预设</a>
-            <a class="nav-tab" href="#create">➕ 创建索引库</a>
         </div>
 
         <!-- 仪表板 -->
@@ -362,7 +361,10 @@
         <!-- 索引库管理 -->
         <div id="libraries" class="tab-content">
             <div class="card">
-                <h3>📚 索引库列表</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3>📚 索引库列表</h3>
+                    <button class="btn btn-success" onclick="showLibraryModal()">➕ 创建新的索引库</button>
+                </div>
                 <div id="librariesContainer"><div class="loading"></div> 加载中...</div>
             </div>
         </div>
@@ -387,29 +389,35 @@
             </div>
         </div>
 
-        <!-- 创建索引库 -->
-        <div id="create" class="tab-content">
-            <div class="card">
-                <h3>➕ 创建新的索引库</h3>
-                <form id="createLibraryForm">
-                    <div class="form-group">
-                        <label class="form-label">代码库路径 *</label>
-                        <input type="text" class="form-input" id="codebasePath" required placeholder="例如: C:\MyProject 或 /path/to/project">
+        <!-- Create tab is removed -->
+    </div>
+
+    <!-- 创建/编辑索引库模态框 -->
+    <div id="libraryModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="libraryModalTitle">创建新的索引库</h3>
+            <form id="libraryForm">
+                <input type="hidden" id="libraryId">
+                <div class="form-group">
+                    <label class="form-label">代码库路径 *</label>
+                    <input type="text" class="form-input" id="codebasePath" required placeholder="例如: C:\MyProject 或 /path/to/project">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">索引库名称</label>
+                    <input type="text" class="form-input" id="libraryName" placeholder="留空将自动生成">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">配置预设 (可多选)</label>
+                    <div id="presetCheckboxes" class="preset-checkbox-group">
+                        <div class="loading"></div> 加载中...
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">索引库名称</label>
-                        <input type="text" class="form-input" id="libraryName" placeholder="留空将自动生成">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">配置预设 (可多选)</label>
-                        <div id="presetCheckboxes" class="preset-checkbox-group">
-                            <div class="loading"></div> 加载中...
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success">🚀 创建索引库</button>
-                </form>
-                <div id="createResult" class="hidden"></div>
-            </div>
+                </div>
+                <div id="formResult" class="hidden"></div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn btn-secondary" onclick="hideLibraryModal()">取消</button>
+                    <button type="submit" class="btn btn-success">🚀 保存</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -451,13 +459,14 @@
         let libraries = [];
         let presets = [];
         let globalStats = {};
+        let currentEditingLibraryId = null;
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
             handleNavigation();
             window.addEventListener('hashchange', handleNavigation);
             
-            document.getElementById('createLibraryForm').addEventListener('submit', createLibrary);
+            document.getElementById('libraryForm').addEventListener('submit', saveLibrary);
             document.getElementById('createPresetForm').addEventListener('submit', saveCustomPreset);
         });
 
@@ -479,7 +488,6 @@
                 case 'libraries': loadLibraries(); break;
                 case 'tasks': loadTasks(); break;
                 case 'presets': loadPresets(); break;
-                case 'create': loadCreateFormPresets(); break;
             }
         }
 
@@ -557,7 +565,8 @@
                                 <div class="library-stat"><div class="library-stat-number">${lib.isMonitored ? '✅' : '❌'}</div><div class="library-stat-label">监控</div></div>
                             </div>
                             <div style="margin-top: 1rem;">
-                                <button class="btn" onclick="startIndexing(${lib.id})">🚀 开始索引</button>
+                                <button class="btn" onclick="startIndexing(${lib.id})">🚀 索引</button>
+                                <button class="btn btn-secondary" onclick="showLibraryModal(${lib.id})">✏️ 编辑</button>
                                 <button class="btn btn-secondary" onclick="rebuildIndex(${lib.id})">🔄 重建</button>
                                 <button class="btn btn-danger" onclick="deleteLibrary(${lib.id})">🗑️ 删除</button>
                             </div>
@@ -637,8 +646,8 @@
             }
         }
 
-        // 为创建表单加载预设
-        async function loadCreateFormPresets() {
+        // 为模态框加载预设
+        async function loadModalPresets(selectedPresetIds = []) {
             try {
                 if (!presets.length) {
                     const response = await fetch('/api/Configuration/presets');
@@ -647,7 +656,8 @@
                 const container = document.getElementById('presetCheckboxes');
                 let html = '';
                 presets.forEach(p => {
-                    html += `<label class="preset-checkbox-item"><input type="checkbox" value="${p.id}"> ${p.name} (${p.isBuiltIn ? '内置' : '自定义'})</label>`;
+                    const isChecked = selectedPresetIds.includes(p.id);
+                    html += `<label class="preset-checkbox-item"><input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''}> ${p.name} (${p.isBuiltIn ? '内置' : '自定义'})</label>`;
                 });
                 container.innerHTML = html || '没有可用的预设。';
             } catch (error) {
@@ -655,35 +665,116 @@
             }
         }
 
-        // 创建索引库
-        async function createLibrary(event) {
-            event.preventDefault();
-            const selectedPresetIds = Array.from(document.querySelectorAll('#presetCheckboxes input:checked')).map(cb => cb.value);
+        // 显示/隐藏创建/编辑索引库模态框
+        async function showLibraryModal(libraryId = null) {
+            currentEditingLibraryId = libraryId;
+            const form = document.getElementById('libraryForm');
+            const modalTitle = document.getElementById('libraryModalTitle');
+            const codebasePathInput = document.getElementById('codebasePath');
             
-            const formData = {
-                codebasePath: document.getElementById('codebasePath').value,
-                name: document.getElementById('libraryName').value || null,
-                presetIds: selectedPresetIds
-            };
-            
-            try {
-                const response = await fetch('/api/IndexLibrary', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                const result = await response.json();
-                if (response.ok && result.success) {
-                    document.getElementById('createResult').innerHTML = `<div class="alert alert-success">✅ 索引库创建成功！任务ID: ${result.taskId || 'N/A'}</div>`;
-                    document.getElementById('createResult').classList.remove('hidden');
-                    document.getElementById('createLibraryForm').reset();
-                } else {
-                    throw new Error(result.message || '创建失败');
+            form.reset();
+            document.getElementById('formResult').classList.add('hidden');
+
+            if (libraryId) {
+                modalTitle.textContent = '编辑索引库';
+                const lib = libraries.find(l => l.id === libraryId);
+                if (lib) {
+                    document.getElementById('libraryId').value = lib.id;
+                    document.getElementById('libraryName').value = lib.name;
+                    codebasePathInput.value = lib.codebasePath;
+                    codebasePathInput.disabled = true; // 路径不可编辑
+                    
+                    // 获取详细信息以预选预设
+                    const response = await fetch(`/api/IndexLibrary/${libraryId}`);
+                    const detailedLib = await response.json();
+                    const associatedPresetIds = presets.filter(p =>
+                        p.watchConfiguration.filePatterns.every(fp => detailedLib.filePatterns.includes(fp)) &&
+                        p.watchConfiguration.excludePatterns.every(ep => detailedLib.excludePatterns.includes(ep))
+                    ).map(p => p.id);
+                    
+                    await loadModalPresets(associatedPresetIds);
                 }
-            } catch (error) {
-                document.getElementById('createResult').innerHTML = `<div class="alert alert-error">❌ 创建失败: ${error.message}</div>`;
-                document.getElementById('createResult').classList.remove('hidden');
+            } else {
+                modalTitle.textContent = '创建新的索引库';
+                codebasePathInput.disabled = false;
+                await loadModalPresets();
             }
+            
+            document.getElementById('libraryModal').classList.remove('hidden');
+        }
+
+        function hideLibraryModal() {
+            document.getElementById('libraryModal').classList.add('hidden');
+            currentEditingLibraryId = null;
+        }
+
+        // 保存索引库 (创建或更新)
+        async function saveLibrary(event) {
+            event.preventDefault();
+            const formResult = document.getElementById('formResult');
+            formResult.classList.add('hidden');
+
+            const libraryId = document.getElementById('libraryId').value;
+            const isEditing = !!libraryId;
+
+            // 更新名称
+            const name = document.getElementById('libraryName').value;
+            if (isEditing) {
+                try {
+                    const nameUpdateRes = await fetch(`/api/IndexLibrary/${libraryId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name })
+                    });
+                    if (!nameUpdateRes.ok) throw new Error('更新名称失败');
+                } catch (error) {
+                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
+                    formResult.classList.remove('hidden');
+                    return;
+                }
+            }
+
+            // 更新预设
+            const selectedPresetIds = Array.from(document.querySelectorAll('#presetCheckboxes input:checked')).map(cb => cb.value);
+            if (isEditing) {
+                 try {
+                    const presetsUpdateRes = await fetch(`/api/IndexLibrary/${libraryId}/presets`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ presetIds: selectedPresetIds })
+                    });
+                    if (!presetsUpdateRes.ok) throw new Error('更新配置预设失败');
+                } catch (error) {
+                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
+                    formResult.classList.remove('hidden');
+                    return;
+                }
+            }
+
+            // 创建
+            if (!isEditing) {
+                const createData = {
+                    codebasePath: document.getElementById('codebasePath').value,
+                    name: name || null,
+                    presetIds: selectedPresetIds
+                };
+                try {
+                    const response = await fetch('/api/IndexLibrary', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(createData)
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.success) throw new Error(result.message || '创建失败');
+                } catch (error) {
+                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
+                    formResult.classList.remove('hidden');
+                    return;
+                }
+            }
+            
+            hideLibraryModal();
+            loadLibraries(); // 刷新列表
         }
 
         // 显示/隐藏创建预设模态框
