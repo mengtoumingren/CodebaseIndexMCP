@@ -171,7 +171,7 @@ public sealed class IndexManagementTools
                 // 全局统计
                 response.AppendLine("🌍 全局统计:");
                 response.AppendLine($"  📁 总代码库数: {globalStats.TotalLibraries}");
-                response.AppendLine($"  📦 总代码片段: {globalStats.TotalIndexedSnippets:N0}");
+                response.AppendLine($"  📦 总代码片段: {globalStats.TotalSnippets:N0}");
                 response.AppendLine($"  📄 总文件数: {globalStats.TotalFiles:N0}");
                 response.AppendLine();
 
