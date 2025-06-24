@@ -28,8 +28,14 @@ public record LanguageInfo(
         "text/javascript");
     
     public static LanguageInfo TypeScript => new(
-        "typescript", 
-        "TypeScript", 
-        new[] { ".ts" }, 
+        "typescript",
+        "TypeScript",
+        new[] { ".ts" },
         "text/typescript");
+
+   public static LanguageInfo Cshtml => new(
+       "cshtml",
+       "CSHTML",
+       new[] { ".cshtml" },
+       "application/x-cshtml");
 }

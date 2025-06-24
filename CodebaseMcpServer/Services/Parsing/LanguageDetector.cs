@@ -15,7 +15,8 @@ public class LanguageDetector : ILanguageDetector
         { ".cs", LanguageInfo.CSharp },
         { ".py", LanguageInfo.Python },
         { ".js", LanguageInfo.JavaScript },
-        { ".ts", LanguageInfo.TypeScript }
+        { ".ts", LanguageInfo.TypeScript },
+        { ".cshtml", LanguageInfo.Cshtml }
     };
     
     /// <summary>

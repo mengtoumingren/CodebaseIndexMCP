@@ -10,10 +10,12 @@ public static class CodeParserFactory
     private static readonly ILanguageDetector LanguageDetector = new LanguageDetector();
     private static readonly Dictionary<string, Func<ICodeParser>> ParserFactories = new()
     {
-        { "csharp", () => new CSharpRoslynParser() }
+        { "csharp", () => new CSharpRoslynParser() },
         // 将来可以添加其他语言解析器
-        // { "python", () => new PythonParser() },
-        // { "javascript", () => new JavaScriptParser() }
+        { "python", () => new PythonParser() },
+        { "javascript", () => new JavaScriptParser() },
+        { "typescript", () => new TypeScriptParser() },
+        { "cshtml", () => new CshtmlParser() }
     };
     
     /// <summary>
