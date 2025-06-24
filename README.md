@@ -310,9 +310,9 @@ graph TD
     end
 
     subgraph E [Data & Infrastructure]
-        E1[Embedding Providers <br> (DashScope, Ollama, etc.)]
-        E2[Qdrant DB <br> (Vector Storage)]
-        E3[LiteDB <br> (Metadata & Task Storage)]
+        E1["Embedding Providers\n(DashScope, Ollama, etc.)"]
+        E2["Qdrant DB\n(Vector Storage)"]
+        E3["LiteDB\n(Metadata & Task Storage)"]
         E4[C# Code Parser]
     end
 
