@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  codebase-mcp-server-v2:
+    build:
+      context: .
+      dockerfile: CodebaseMcpServer_v2/Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/codebase_mcp_v2.db
+    volumes:
+      - ./data_v2:/app/data
+    depends_on:
+      - qdrant
+  
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_storage_v2:/qdrant/storage

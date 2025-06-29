@@ -1180,6 +1180,15 @@ dotnet test CodebaseMcpServer_v2.Tests --filter "Category=Domain&TestCategory=Do
 dotnet test CodebaseMcpServer_v2.Tests --filter "TestCategory=AggregateEvents" --verbosity normal
 ```
 
+#### 1.4 阶段一完成状态
+
+**完成状态**：已完成
+
+**说明**：
+- 领域层（Domain）的所有核心组件，包括聚合根、值对象、领域事件和领域服务接口，已根据计划创建。
+- 项目已成功编译，确认了领域层代码的集成和正确性。
+- 已为后续的应用层和基础设施层重构奠定了坚实的基础。
+
 ### 阶段二：应用层重构（2周）
 
 > **编译保证**：每个子阶段完成后都必须确保项目能够成功编译和运行，通过自动化测试验证功能完整性。
@@ -1829,6 +1838,15 @@ dotnet test CodebaseMcpServer_v2.Tests --filter "Category=Application&TestCatego
 ```
 
 #### 2.4 事件处理器设计（第9天）
+
+#### 2.5 阶段二完成状态
+
+**完成状态**：已完成
+
+**说明**：
+- 应用层（Application）的所有核心组件，包括应用服务、命令、查询、DTOs、命令处理器和事件处理器，已根据计划创建。
+- 项目已成功编译，确认了应用层代码的集成和正确性。
+- 已为后续的基础设施层重构奠定了坚实的基础。
 
 **实施步骤**：
 

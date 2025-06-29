@@ -1,0 +1,41 @@
+name: CodebaseMcpServer_v2 CI/CD
+
+on:
+  push:
+    paths:
+      - 'CodebaseMcpServer_v2/**'
+  pull_request:
+    paths:
+      - 'CodebaseMcpServer_v2/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./CodebaseMcpServer_v2
+    
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --no-restore
+    
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+    
+    - name: Compatibility Test
+      run: |
+        # 启动v2服务
+        dotnet run --project CodebaseMcpServer_v2 &
+        sleep 10
+        
+        # 运行API兼容性测试
+        dotnet test Tests/CompatibilityTests --logger trx

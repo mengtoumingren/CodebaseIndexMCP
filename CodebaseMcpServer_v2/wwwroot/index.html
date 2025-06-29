@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodebaseApp 管理控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 300;
+        }
+
+        .header p {
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 1rem;
+            text-align: center;
+            background: white;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+            color: #666;
+            text-decoration: none;
+        }
+
+        .nav-tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .nav-tab:hover:not(.active) {
+            background: #f8f9ff;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .library-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .library-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .library-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+
+        .library-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .library-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-completed { background: #d4edda; color: #155724; }
+        .status-indexing, .status-running { background: #fff3cd; color: #856404; }
+        .status-pending { background: #e2e3e5; color: #383d41; }
+        .status-failed { background: #f8d7da; color: #721c24; }
+        .status-cancelled { background: #f0f0f0; color: #555; }
+
+        .library-info {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .library-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+        }
+
+        .library-stat {
+            text-align: center;
+        }
+
+        .library-stat-number {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .library-stat-label {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s ease;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
+
+        .form-group { margin-bottom: 1rem; }
+        .form-label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: #333; }
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: border-color 0.2s ease;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+        .preset-checkbox-group {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .preset-checkbox-item {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .tag-input-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .tag {
+            display: flex;
+            align-items: center;
+            background: #e9ecef;
+            color: #495057;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        .tag-remove {
+            margin-left: 0.5rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .tag-input {
+            flex-grow: 1;
+            border: none;
+            outline: none;
+            padding: 0.25rem;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert { padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .hidden { display: none !important; }
+ 
+         .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        .preset-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+            transition: all 0.2s ease;
+        }
+        .preset-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+        }
+        .preset-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .preset-name { font-weight: 600; color: #333; }
+        .preset-badge { background: #667eea; color: white; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem; }
+        .preset-description { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+        .preset-details { font-size: 0.8rem; color: #666; }
+
+        .task-table { width: 100%; border-collapse: collapse; }
+        .task-table th, .task-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+        .task-table th { background: #f8f9fa; }
+        .progress-bar {
+            width: 100%;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar-inner {
+            height: 10px;
+            background-color: #667eea;
+            transition: width 0.3s ease;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 CodebaseApp 管理控制台</h1>
+        <p>智能代码库索引管理平台 - 企业级配置管理</p>
+    </div>
+
+    <div class="container">
+        <div class="nav-tabs">
+            <a class="nav-tab" href="#dashboard">📊 仪表板</a>
+            <a class="nav-tab" href="#libraries">📚 索引库管理</a>
+            <a class="nav-tab" href="#tasks">📈 任务监控</a>
+            <a class="nav-tab" href="#presets">📝 配置预设</a>
+        </div>
+
+        <!-- 仪表板 -->
+        <div id="dashboard" class="tab-content">
+            <div class="stats-grid" id="libraryStatsGrid"></div>
+            <div class="stats-grid" id="taskStatsGridDashboard" style="margin-top: 1rem"></div>
+            <div class="card">
+                <h3>📈 文件类型分布</h3>
+                <div id="projectTypeChart">加载中...</div>
+            </div>
+            <div class="card">
+                <h3>🔥 最近活动</h3>
+                <div id="recentActivity">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 索引库管理 -->
+        <div id="libraries" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3>📚 索引库列表</h3>
+                    <button class="btn btn-success" onclick="showLibraryModal()">➕ 创建新的索引库</button>
+                </div>
+                <div id="librariesContainer"><div class="loading"></div> 加载中...</div>
+            </div>
+        </div>
+
+        <!-- 任务监控 -->
+        <div id="tasks" class="tab-content">
+            <div class="card">
+                <h3>📋 任务列表</h3>
+                <div id="tasksContainer"><div class="loading"></div> 加载中...</div>
+            </div>
+        </div>
+
+        <!-- 配置预设 -->
+        <div id="presets" class="tab-content">
+            <div class="card">
+                <h3>📝 配置预设管理</h3>
+                <div style="margin-bottom: 1rem;">
+                    <button class="btn" onclick="loadPresets()">🔄 刷新预设</button>
+                    <button class="btn btn-success" onclick="showCreatePresetForm()">➕ 创建自定义预设</button>
+                </div>
+                <div id="presetsContainer"><div class="loading"></div> 加载中...</div>
+            </div>
+        </div>
+
+        <!-- Create tab is removed -->
+    </div>
+
+    <!-- 创建/编辑索引库模态框 -->
+    <div id="libraryModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="libraryModalTitle">创建新的索引库</h3>
+            <form id="libraryForm">
+                <input type="hidden" id="libraryId">
+                <div class="form-group">
+                    <label class="form-label">代码库路径 *</label>
+                    <input type="text" class="form-input" id="codebasePath" required placeholder="例如: C:\MyProject 或 /path/to/project">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">索引库名称</label>
+                    <input type="text" class="form-input" id="libraryName" placeholder="留空将自动生成">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">文件包含模式</label>
+                    <div id="filePatternsContainer"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">文件排除模式</label>
+                    <div id="excludePatternsContainer"></div>
+                </div>
+                <div id="formResult" class="hidden"></div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn btn-secondary" onclick="hideLibraryModal()">取消</button>
+                    <button type="submit" class="btn btn-success">🚀 保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 创建预设模态框 -->
+    <div id="createPresetModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>创建自定义预设</h3>
+            <form id="createPresetForm">
+                <div class="form-group">
+                    <label class="form-label">预设名称 *</label>
+                    <input type="text" id="presetName" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">描述</label>
+                    <textarea id="presetDescription" class="form-textarea" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">项目类型</label>
+                    <input type="text" id="presetProjectType" class="form-input" placeholder="e.g., csharp, typescript, python">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">文件包含模式 (逗号分隔)</label>
+                    <input type="text" id="presetFilePatterns" class="form-input" placeholder="e.g., *.cs,*.json">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">排除模式 (逗号分隔)</label>
+                    <input type="text" id="presetExcludePatterns" class="form-input" placeholder="e.g., bin/,obj/">
+                </div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn btn-secondary" onclick="hideCreatePresetForm()">取消</button>
+                    <button type="submit" class="btn btn-success">保存预设</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 全局状态
+        let libraries = [];
+        let presets = [];
+        let globalStats = {};
+        let currentEditingLibraryId = null;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            handleNavigation();
+            window.addEventListener('hashchange', handleNavigation);
+            
+            document.getElementById('libraryForm').addEventListener('submit', saveLibrary);
+            document.getElementById('createPresetForm').addEventListener('submit', saveCustomPreset);
+        });
+
+        // 导航处理
+        function handleNavigation() {
+            const tabName = window.location.hash.substring(1) || 'dashboard';
+            
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            
+            const activeTab = document.getElementById(tabName);
+            if (activeTab) {
+                activeTab.classList.add('active');
+                document.querySelector(`.nav-tab[href="#${tabName}"]`).classList.add('active');
+            }
+            
+            switch(tabName) {
+                case 'dashboard': loadDashboard(); break;
+                case 'libraries': loadLibraries(); break;
+                case 'tasks': loadTasks(); break;
+                case 'presets': loadPresets(); break;
+            }
+        }
+
+        // 加载仪表板数据
+        async function loadDashboard() {
+            try {
+                const [statsResponse, taskSummaryRes] = await Promise.all([
+                    fetch('/api/IndexLibrary/statistics/global'),
+                    fetch('/api/task/summary')
+                ]);
+
+                globalStats = await statsResponse.json();
+                const taskSummary = await taskSummaryRes.json();
+                
+                const libraryStatsGrid = document.getElementById('libraryStatsGrid');
+                libraryStatsGrid.innerHTML = `
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalLibraries || 0}</div><div class="stat-label">总索引库数</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.completedLibraries || 0}</div><div class="stat-label">已完成索引</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalFiles || 0}</div><div class="stat-label">总文件数</div></div>
+                    <div class="stat-card"><div class="stat-number">${globalStats.totalSnippets || 0}</div><div class="stat-label">总代码片段</div></div>
+                `;
+
+                const taskStatsGrid = document.getElementById('taskStatsGridDashboard');
+                taskStatsGrid.innerHTML = `
+                    <div class="stat-card"><div class="stat-number">${taskSummary.totalTasks || 0}</div><div class="stat-label">总任务数</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.runningTasks || 0}</div><div class="stat-label">运行中</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.completedTasks || 0}</div><div class="stat-label">已完成</div></div>
+                    <div class="stat-card"><div class="stat-number">${taskSummary.failedTasks || 0}</div><div class="stat-label">失败</div></div>
+                `;
+                
+                const typeResponse = await fetch('/api/IndexLibrary/statistics/language-distribution');
+                const typeDistribution = await typeResponse.json();
+                
+                let chartHtml = '';
+                for (const [type, count] of Object.entries(typeDistribution)) {
+                    const percentage = globalStats.totalFiles ? ((count / globalStats.totalFiles) * 100).toFixed(1) : 0;
+                    chartHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"><span>${type}</span><span>${count} (${percentage}%)</span></div>`;
+                }
+                document.getElementById('projectTypeChart').innerHTML = chartHtml || '暂无数据';
+                
+                const librariesResponse = await fetch('/api/IndexLibrary');
+                const recentLibraries = await librariesResponse.json();
+                
+                let activityHtml = '';
+                recentLibraries.slice(0, 5).forEach(lib => {
+                    activityHtml += `<div style="padding: 0.5rem 0; border-bottom: 1px solid #eee;"><strong>${lib.name}</strong> - ${lib.status} (${getTimeAgo(new Date(lib.updatedAt))})</div>`;
+                });
+                document.getElementById('recentActivity').innerHTML = activityHtml || '暂无活动';
+                
+            } catch (error) {
+                console.error('加载仪表板数据失败:', error);
+                document.getElementById('statsGrid').innerHTML = '<div class="alert alert-error">加载统计数据失败</div>';
+            }
+        }
+
+        // 加载索引库列表
+        async function loadLibraries() {
+            try {
+                const response = await fetch('/api/IndexLibrary');
+                libraries = await response.json();
+                
+                let html = '<div class="library-grid">';
+                libraries.forEach(lib => {
+                    html += `
+                        <div class="library-card">
+                            <div class="library-header">
+                                <div class="library-name">${lib.name}</div>
+                                <div class="status-badge status-${lib.status.toLowerCase()}">${getStatusText(lib.status)}</div>
+                            </div>
+                            <div class="library-info">📁 ${lib.codebasePath}</div>
+                            <div class="library-info">🏷️ ${lib.projectType || 'N/A'}</div>
+                            <div class="library-stats">
+                                <div class="library-stat"><div class="library-stat-number">${lib.totalFiles}</div><div class="library-stat-label">文件</div></div>
+                                <div class="library-stat"><div class="library-stat-number">${lib.indexedSnippets}</div><div class="library-stat-label">片段</div></div>
+                                <div class="library-stat"><div class="library-stat-number">${lib.isMonitored ? '✅' : '❌'}</div><div class="library-stat-label">监控</div></div>
+                            </div>
+                            <div style="margin-top: 1rem;">
+                                <button class="btn" onclick="startIndexing(${lib.id})">🚀 索引</button>
+                                <button class="btn btn-secondary" onclick="showLibraryModal(${lib.id})">✏️ 编辑</button>
+                                <button class="btn btn-secondary" onclick="rebuildIndex(${lib.id})">🔄 重建</button>
+                                <button class="btn btn-danger" onclick="deleteLibrary(${lib.id})">🗑️ 删除</button>
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+                document.getElementById('librariesContainer').innerHTML = html;
+            } catch (error) {
+                document.getElementById('librariesContainer').innerHTML = `<div class="alert alert-error">加载索引库列表失败: ${error.message}</div>`;
+            }
+        }
+
+        // 加载任务监控数据
+        async function loadTasks() {
+            try {
+                const tasksRes = await fetch('/api/task');
+                const tasks = await tasksRes.json();
+
+                let tasksHtml = `
+                    <table class="task-table">
+                        <thead><tr><th>任务ID</th><th>类型</th><th>状态</th><th>进度</th><th>创建时间</th><th>详情</th></tr></thead>
+                        <tbody>`;
+                tasks.forEach(task => {
+                    tasksHtml += `
+                        <tr>
+                            <td>${task.taskId.substring(0, 8)}...</td>
+                            <td>${task.type}</td>
+                            <td><span class="status-badge status-${task.status.toLowerCase()}">${getStatusText(task.status)}</span></td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress-bar-inner" style="width: ${task.progress}%;"></div>
+                                </div>
+                            </td>
+                            <td>${new Date(task.createdAt).toLocaleString()}</td>
+                            <td>${task.errorMessage || task.currentFile || ''}</td>
+                        </tr>`;
+                });
+                tasksHtml += '</tbody></table>';
+                document.getElementById('tasksContainer').innerHTML = tasksHtml;
+
+            } catch (error) {
+                console.error('加载任务数据失败:', error);
+                document.getElementById('tasksContainer').innerHTML = `<div class="alert alert-error">加载任务数据失败: ${error.message}</div>`;
+            }
+        }
+
+        // 加载配置预设
+        async function loadPresets() {
+            try {
+                const response = await fetch('/api/Configuration/presets');
+                presets = await response.json();
+                
+                let html = '<div class="preset-grid">';
+                presets.forEach(preset => {
+                    html += `
+                        <div class="preset-card">
+                            <div class="preset-header">
+                                <div class="preset-name">${preset.name}</div>
+                                <div class="preset-badge">${preset.isBuiltIn ? '内置' : '自定义'}</div>
+                            </div>
+                            <div class="preset-description">${preset.description}</div>
+                            <div class="preset-details">
+                                <div>📁 ${preset.watchConfiguration.filePatterns.length} 种文件类型</div>
+                                <div>🚫 ${preset.watchConfiguration.excludePatterns.length} 个排除模式</div>
+                                <div>🏷️ ${preset.projectType} | ${preset.category}</div>
+                            </div>
+                            <div style="margin-top: 1rem;">
+                                <button class="btn" onclick="exportPreset('${preset.id}')">📤 导出</button>
+                                ${!preset.isBuiltIn ? `<button class="btn btn-danger" onclick="deletePreset('${preset.id}')">🗑️ 删除</button>` : ''}
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+                document.getElementById('presetsContainer').innerHTML = html;
+            } catch (error) {
+                document.getElementById('presetsContainer').innerHTML = `<div class="alert alert-error">加载配置预设失败: ${error.message}</div>`;
+            }
+        }
+
+        // 创建标签式输入组件
+        function createTagInput(containerId, initialTags = []) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            const tagInputContainer = document.createElement('div');
+            tagInputContainer.className = 'tag-input-container';
+            
+            const tags = new Set(initialTags);
+
+            function renderTags() {
+                tagInputContainer.innerHTML = '';
+                tags.forEach(tag => {
+                    const tagElement = document.createElement('div');
+                    tagElement.className = 'tag';
+                    tagElement.innerHTML = `<span>${tag}</span><span class="tag-remove" data-tag="${tag}">&times;</span>`;
+                    tagInputContainer.appendChild(tagElement);
+                });
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'tag-input';
+                input.placeholder = '添加并按回车...';
+                tagInputContainer.appendChild(input);
+            }
+
+            tagInputContainer.addEventListener('click', e => {
+                if (e.target.classList.contains('tag-remove')) {
+                    tags.delete(e.target.dataset.tag);
+                    renderTags();
+                }
+            });
+
+            tagInputContainer.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                    e.preventDefault();
+                    tags.add(e.target.value.trim());
+                    renderTags();
+                }
+            });
+            
+            container.appendChild(tagInputContainer);
+            renderTags();
+
+            return {
+                getTags: () => Array.from(tags)
+            };
+        }
+
+        // 显示/隐藏创建/编辑索引库模态框
+        async function showLibraryModal(libraryId = null) {
+            currentEditingLibraryId = libraryId;
+            const form = document.getElementById('libraryForm');
+            const modalTitle = document.getElementById('libraryModalTitle');
+            const codebasePathInput = document.getElementById('codebasePath');
+            
+            form.reset();
+            document.getElementById('formResult').classList.add('hidden');
+
+            if (libraryId) {
+                modalTitle.textContent = '编辑索引库';
+                const lib = libraries.find(l => l.id === libraryId);
+                if (lib) {
+                    document.getElementById('libraryId').value = lib.id;
+                    document.getElementById('libraryName').value = lib.name;
+                    codebasePathInput.value = lib.codebasePath;
+                    codebasePathInput.disabled = true;
+
+                    const response = await fetch(`/api/IndexLibrary/${libraryId}`);
+                    const detailedLib = await response.json();
+                    
+                    window.filePatternsTagInput = createTagInput('filePatternsContainer', detailedLib.filePatterns);
+                    window.excludePatternsTagInput = createTagInput('excludePatternsContainer', detailedLib.excludePatterns);
+                }
+            } else {
+                modalTitle.textContent = '创建新的索引库';
+                codebasePathInput.disabled = false;
+                window.filePatternsTagInput = createTagInput('filePatternsContainer', ['**/*']);
+                window.excludePatternsTagInput = createTagInput('excludePatternsContainer', ['bin/', 'obj/']);
+            }
+            
+            document.getElementById('libraryModal').classList.remove('hidden');
+        }
+
+        function hideLibraryModal() {
+            document.getElementById('libraryModal').classList.add('hidden');
+            currentEditingLibraryId = null;
+        }
+
+        // 保存索引库 (创建或更新)
+        async function saveLibrary(event) {
+            event.preventDefault();
+            const formResult = document.getElementById('formResult');
+            formResult.classList.add('hidden');
+
+            const libraryId = document.getElementById('libraryId').value;
+            const isEditing = !!libraryId;
+
+            const name = document.getElementById('libraryName').value;
+            const filePatterns = window.filePatternsTagInput.getTags();
+            const excludePatterns = window.excludePatternsTagInput.getTags();
+
+            if (isEditing) {
+                // 更新
+                const updateData = { name, filePatterns, excludePatterns };
+                try {
+                    const response = await fetch(`/api/IndexLibrary/${libraryId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updateData)
+                    });
+                    if (!response.ok) {
+                         const error = await response.json();
+                         throw new Error(error.message || '更新失败');
+                    }
+                } catch (error) {
+                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
+                    formResult.classList.remove('hidden');
+                    return;
+                }
+            } else {
+                // 创建
+                const createData = {
+                    codebasePath: document.getElementById('codebasePath').value,
+                    name: name || null,
+                    // 注意：创建时我们不直接传递patterns，而是依赖后端从预设或自动检测生成
+                    // 如果需要创建时也自定义，则需要修改CreateAsync逻辑
+                };
+                 try {
+                    const response = await fetch('/api/IndexLibrary', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(createData)
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.success) throw new Error(result.message || '创建失败');
+                } catch (error) {
+                    formResult.innerHTML = `<div class="alert alert-error">❌ ${error.message}</div>`;
+                    formResult.classList.remove('hidden');
+                    return;
+                }
+            }
+            
+            hideLibraryModal();
+            loadLibraries(); // 刷新列表
+        }
+
+        // 显示/隐藏创建预设模态框
+        function showCreatePresetForm() { document.getElementById('createPresetModal').classList.remove('hidden'); }
+        function hideCreatePresetForm() { document.getElementById('createPresetModal').classList.add('hidden'); }
+
+        // 保存自定义预设
+        async function saveCustomPreset(event) {
+            event.preventDefault();
+            const presetData = {
+                name: document.getElementById('presetName').value,
+                description: document.getElementById('presetDescription').value,
+                projectType: document.getElementById('presetProjectType').value,
+                category: 'Custom',
+                isBuiltIn: false,
+                watchConfiguration: {
+                    filePatterns: document.getElementById('presetFilePatterns').value.split(',').map(s => s.trim()).filter(Boolean),
+                    excludePatterns: document.getElementById('presetExcludePatterns').value.split(',').map(s => s.trim()).filter(Boolean),
+                }
+            };
+
+            try {
+                const response = await fetch('/api/Configuration/presets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(presetData)
+                });
+                if (response.ok) {
+                    alert('预设创建成功!');
+                    hideCreatePresetForm();
+                    loadPresets();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.message || '创建失败');
+                }
+            } catch (error) {
+                alert(`❌ 创建预设失败: ${error.message}`);
+            }
+        }
+
+        // 其他操作函数 (startIndexing, rebuildIndex, etc.)
+        async function startIndexing(libraryId) {
+            try {
+                const response = await fetch(`/api/IndexLibrary/${libraryId}/index`, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) {
+                    alert(`✅ 索引任务已启动！任务ID: ${result.taskId}`);
+                    if(window.location.hash === '#libraries') loadLibraries();
+                } else { throw new Error(result.message); }
+            } catch (error) { alert(`❌ 启动索引失败: ${error.message}`); }
+        }
+        async function rebuildIndex(libraryId) {
+            if (!confirm('确定要重建此索引库吗？')) return;
+            try {
+                const response = await fetch(`/api/IndexLibrary/${libraryId}/rebuild`, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) {
+                    alert(`✅ 重建任务已启动！任务ID: ${result.taskId}`);
+                    if(window.location.hash === '#libraries') loadLibraries();
+                } else { throw new Error(result.message); }
+            } catch (error) { alert(`❌ 重建失败: ${error.message}`); }
+        }
+        async function deleteLibrary(libraryId) {
+            if (!confirm('确定要删除此索引库吗？')) return;
+            try {
+                const response = await fetch(`/api/IndexLibrary/${libraryId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    alert('✅ 索引库删除成功！');
+                    loadLibraries();
+                } else { const result = await response.json(); throw new Error(result.message); }
+            } catch (error) { alert(`❌ 删除失败: ${error.message}`); }
+        }
+        async function exportPreset(presetId) {
+            window.location.href = `/api/Configuration/presets/${presetId}/export`;
+        }
+        async function deletePreset(presetId) {
+            if (!confirm('确定要删除此自定义预设吗？')) return;
+            try {
+                const response = await fetch(`/api/Configuration/presets/${presetId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    alert('✅ 预设删除成功！');
+                    loadPresets();
+                } else { const result = await response.json(); throw new Error(result.message); }
+            } catch (error) { alert(`❌ 删除预设失败: ${error.message}`); }
+        }
+
+        // 辅助函数
+        function getStatusText(status) {
+            const statusMap = { 'Completed': '已完成', 'Indexing': '索引中', 'Pending': '等待中', 'Failed': '失败', 'Cancelled': '已取消', 'Running': '运行中' };
+            return statusMap[status] || status;
+        }
+        function getTimeAgo(date) {
+            const diff = Math.floor((new Date() - date) / 1000);
+            if (diff < 60) return '刚刚';
+            if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+            return `${Math.floor(diff / 86400)} 天前`;
+        }
+    </script>
+</body>
+</html>

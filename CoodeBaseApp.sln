@@ -5,14 +5,6 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer", "CodebaseMcpServer\CodebaseMcpServer.csproj", "{B8C5E2F1-45A6-4D8C-9B3E-F7E1C4A5D9B2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer.Tests", "CodebaseMcpServer.Tests\CodebaseMcpServer.Tests.csproj", "{23CE0AB3-66E6-4C47-B431-1CA94C559618}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer.Domain", "CodebaseMcpServer.Domain\CodebaseMcpServer.Domain.csproj", "{DA4B05E9-3B29-40EE-953F-45C3BAE9874D}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer.Application", "CodebaseMcpServer.Application\CodebaseMcpServer.Application.csproj", "{3AD3EC40-E660-4ED4-A429-34EC77299081}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer.Infrastructure", "CodebaseMcpServer.Infrastructure\CodebaseMcpServer.Infrastructure.csproj", "{0A477D5E-1611-46B7-8454-07F13D82FBE9}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodebaseMcpServer_v2", "CodebaseMcpServer_v2\CodebaseMcpServer_v2.csproj", "{8822B68F-A61B-4D75-AC3E-50B9CB54FF83}"
 EndProject
 Global
