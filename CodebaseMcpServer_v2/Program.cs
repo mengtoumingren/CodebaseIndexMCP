@@ -272,9 +272,9 @@ catch (Exception ex)
 
 Console.WriteLine();
 Console.WriteLine("🌐 Web管理界面:");
-Console.WriteLine($"  📊 管理控制台: http://localhost:5000");
-Console.WriteLine($"  📖 API文档: http://localhost:5000/api-docs");
-Console.WriteLine($"  🔗 API根路径: http://localhost:5000/api");
+Console.WriteLine($"  📊 管理控制台: http://localhost:3001");
+Console.WriteLine($"  📖 API文档: http://localhost:3001/api-docs");
+Console.WriteLine($"  🔗 API根路径: http://localhost:3001/api");
 Console.WriteLine();
 Console.WriteLine("🎯 使用提示:");
 Console.WriteLine("  1. 访问 Web管理界面 进行可视化管理");

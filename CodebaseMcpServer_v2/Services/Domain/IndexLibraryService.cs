@@ -379,9 +379,26 @@ public class IndexLibraryService : IIndexLibraryService
 
     public async Task<CodebaseMapping?> GetLegacyMappingByPathAsync(string path)
     {
-        var library = await _libraryRepository.GetByPathAsync(path.NormalizePath());
-        if (library == null) return null;
-        return ConvertToLegacyMapping(library);
+        var normalizedPath = path.NormalizePath();
+        while (!string.IsNullOrEmpty(normalizedPath))
+        {
+            var library = await _libraryRepository.GetByPathAsync(normalizedPath);
+            if (library != null)
+            {
+                _logger.LogInformation("为路径 '{OriginalPath}' 找到上级索引库 '{FoundPath}'", path, normalizedPath);
+                return ConvertToLegacyMapping(library);
+            }
+
+            var parentPath = Path.GetDirectoryName(normalizedPath);
+            if (string.IsNullOrEmpty(parentPath) || parentPath == normalizedPath)
+            {
+                // Reached root or invalid parent path
+                break;
+            }
+            normalizedPath = parentPath.NormalizePath();
+        }
+        _logger.LogInformation("未找到路径 '{Path}' 或其任何上级路径的索引库", path);
+        return null;
     }
 
     public async Task<List<CodebaseMapping>> GetLegacyMappingsAsync()
